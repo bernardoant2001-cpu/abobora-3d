@@ -116,12 +116,23 @@
     <p id="hint" class="hint paper">Arraste sobre a abóbora para esculpir <span>·</span> arraste fora dela para girar</p>
 
     <div id="paintbar" class="cutbar shapebar paper" hidden>
-      <div class="shape-list paint-list" role="group" aria-label="Tinta">
-        <button data-ink="ink" aria-pressed="true" title="Tinta preta (escorre)"><i style="background:#0e0804"></i>Preta</button>
-        <button data-ink="cream" aria-pressed="false" title="Tinta creme"><i style="background:#f0e2be"></i>Creme</button>
-        <button data-ink="glow" aria-pressed="false" title="Tinta que brilha no escuro"><i class="glow-swatch"></i>Brilha no escuro</button>
-        <button data-ink="erase" aria-pressed="false" title="Apagar a tinta"><i class="erase-swatch"></i>Borracha</button>
+      <div class="swatches" role="group" aria-label="Cor da tinta">
+        <button data-color="#0e0804" data-flow="1" aria-pressed="true" title="Preta (rala, escorre longe)" aria-label="Preta" style="--c:#0e0804"></button>
+        <button data-color="#f0e2be" data-flow="0" aria-pressed="false" title="Creme (grossa)" aria-label="Creme" style="--c:#f0e2be"></button>
+        <button data-color="#ffffff" data-flow="0.3" aria-pressed="false" title="Branca" aria-label="Branca" style="--c:#ffffff"></button>
+        <button data-color="#b3121f" data-flow="0.85" aria-pressed="false" title="Vermelho sangue" aria-label="Vermelho sangue" style="--c:#b3121f"></button>
+        <button data-color="#ff7a1a" data-flow="0.6" aria-pressed="false" title="Laranja" aria-label="Laranja" style="--c:#ff7a1a"></button>
+        <button data-color="#7dff3a" data-flow="0.6" aria-pressed="false" title="Verde ácido" aria-label="Verde ácido" style="--c:#7dff3a"></button>
+        <button data-color="#8a3cff" data-flow="0.6" aria-pressed="false" title="Roxo" aria-label="Roxo" style="--c:#8a3cff"></button>
+        <button data-color="#2f8cff" data-flow="0.7" aria-pressed="false" title="Azul" aria-label="Azul" style="--c:#2f8cff"></button>
+        <label id="paint-custom-wrap" class="custom-swatch" title="Escolher qualquer cor">
+          <input id="paint-custom" type="color" value="#ff2fa0" aria-label="Escolher qualquer cor" />
+        </label>
+        <button id="paint-erase" class="erase" aria-pressed="false" title="Borracha" aria-label="Borracha"></button>
       </div>
+      <button id="paint-glow" class="glow-toggle" aria-pressed="false" title="A tinta brilha quando as luzes apagam">
+        <i></i>Brilha no escuro
+      </button>
     </div>
 
     <div id="shapebar" class="cutbar shapebar paper" hidden>

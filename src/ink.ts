@@ -67,11 +67,18 @@ void main() {
            + length( texture2D( tNormal, uv - vec2( 0.0, o.y ) ).rgb - texture2D( tNormal, uv + vec2( 0.0, o.y ) ).rgb );
   float edge = max( smoothstep( 0.015, 0.05, lap / c0 ), smoothstep( 0.22, 0.5, nd ) );
 
-  // tudo vira sépia; só o que é bem saturado (abóbora, chamas) guarda um pouco da cor
+  // tudo vira sépia; só o que é bem saturado (abóbora, chamas) guarda um pouco da cor,
+  // e o que foge dos laranjas da cena (as tintas coloridas) guarda bem mais
   vec3 src = texture2D( tDiffuse, vUv ).rgb;
   float lum = dot( src, vec3( 0.299, 0.587, 0.114 ) );
-  float sat = max( src.r, max( src.g, src.b ) ) - min( src.r, min( src.g, src.b ) );
-  vec3 col = mix( texture2D( tRamp, vec2( clamp( lum, 0.0, 1.0 ), 0.5 ) ).rgb, src, keep + smoothstep( 0.25, 0.6, sat ) * 0.3 );
+  float hi = max( src.r, max( src.g, src.b ) );
+  float sat = hi - min( src.r, min( src.g, src.b ) );
+  vec3 h3 = ( vec3( src.g - src.b, src.b - src.r, src.r - src.g ) / max( sat, 1e-4 ) + vec3( 0.0, 2.0, 4.0 ) ) / 6.0;
+  float hue = fract( src.r >= hi ? h3.x : src.g >= hi ? h3.y : h3.z );
+  // só em geometria de verdade: o céu e a paisagem da janela (camada de efeitos) seguem sépia
+  float away = smoothstep( 0.045, 0.075, abs( fract( hue - 0.06 + 0.5 ) - 0.5 ) ) * step( texture2D( tDepth, vUv ).x, 0.99999 );
+  float tint = mix( smoothstep( 0.25, 0.6, sat ) * 0.3, smoothstep( 0.35, 0.75, sat / max( hi, 0.04 ) ) * smoothstep( 0.05, 0.15, sat ) * 0.8, away );
+  vec3 col = mix( texture2D( tRamp, vec2( clamp( lum, 0.0, 1.0 ), 0.5 ) ).rgb, src, keep + tint );
 
   // hachura de nanquim nas sombras
   float hatch = smoothstep( 0.72, 0.9, fract( ( gl_FragCoord.x + gl_FragCoord.y ) / ( 7.0 * px ) + noise( gl_FragCoord.xy / ( 60.0 * px ) ) * 0.6 ) );

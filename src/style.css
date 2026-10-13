@@ -1271,34 +1271,6 @@ body.is-viewing .hint {
   word-break: break-all;
 }
 
-/* ---------- pintura ---------- */
-
-.paint-list button {
-  width: auto !important;
-  padding: 0 10px !important;
-  gap: 6px;
-  display: inline-flex !important;
-  align-items: center;
-  font-size: 13px;
-}
-
-.paint-list i {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1.5px solid var(--ink);
-  flex: none;
-}
-
-.glow-swatch {
-  background: radial-gradient(circle, #f4ffd0, #a8ff7a 60%, #3c6a1c);
-  box-shadow: 0 0 8px #b8ff8a;
-}
-
-.erase-swatch {
-  background: repeating-linear-gradient(45deg, #fff3d1 0 3px, #d8b874 3px 6px);
-}
-
 /* ---------- gravação ---------- */
 
 .recording {
@@ -1338,7 +1310,6 @@ body.is-recording .cutbar {
   .expo-sort { order: 3; flex-basis: 100%; justify-content: center; }
   .viewing { flex-wrap: wrap; justify-content: center; white-space: normal; width: calc(100% - 24px); gap: 8px; padding: 8px; }
   .viewing > span { flex-basis: 100%; text-align: center; }
-  .paint-list button { font-size: 12px; padding: 0 7px !important; }
   .recording { top: auto; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 160px); right: 50%; transform: translateX(50%); }
 }
 
@@ -1350,4 +1321,98 @@ body.is-recording .cutbar {
   .brand { left: 14px; }
   .brand h1 { font-size: 26px; }
   .credit { font-size: 11px; }
+}
+
+/* ---------- paleta de tintas ---------- */
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.swatches > button,
+.custom-swatch {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--ink);
+  background: var(--c);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.swatches > button[aria-pressed='true'],
+.custom-swatch.on {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--ink);
+}
+
+.custom-swatch {
+  overflow: hidden;
+  background: conic-gradient(#ff3b3b, #ffd23b, #5bff3b, #3bd8ff, #6a3bff, #ff3bd8, #ff3b3b);
+}
+
+.custom-swatch.on {
+  background: var(--picked, #ff2fa0);
+}
+
+.custom-swatch input {
+  position: absolute;
+  inset: -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 16px);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatches > .erase {
+  background: repeating-linear-gradient(45deg, #fff3d1 0 4px, #d8b874 4px 8px);
+}
+
+.glow-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.glow-toggle i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  background: #f4ead2;
+}
+
+.glow-toggle[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.glow-toggle[aria-pressed='true'] i {
+  background: radial-gradient(circle, #fffbe0, #b8ff8a 60%, #4c8a24);
+  box-shadow: 0 0 10px #c8ff9a;
+  border-color: #c8ff9a;
+}
+
+@media (max-width: 640px) {
+  .swatches > button,
+  .custom-swatch { width: 28px; height: 28px; }
+  .swatches { gap: 5px; }
+}
+
+@media (max-width: 400px) {
+  .swatches > button,
+  .custom-swatch { width: 25px; height: 25px; }
+  .swatches { gap: 4px; }
 }

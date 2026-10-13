@@ -1,52 +1,61 @@
 import * as THREE from 'three'
 import { nextStep, scale } from './pumpkin'
 
-// camada de pintura por cima da casca (mesmo UV da escultura, metade da resolução)
+// camada de pintura por cima da casca (mesmo UV da escultura, metade da resolução):
+// uma textura com a cor e outra só com onde a tinta brilha no escuro
 const W = 1024
 const H = 512
 const K = 0.5 // pixels desta camada por pixel da máscara de escultura
 
-export type Ink = 'ink' | 'cream' | 'glow' | 'erase'
+/** tinta atual: cor em hex, se brilha no escuro, quão rala ela é (0 = grossa, 1 = rala) ou borracha */
+export type Ink = { color: string; glow: boolean; flow: number } | 'erase'
 
-// a tinta que brilha no escuro é reconhecida no shader pela cor (verde bem maior que azul)
-const COLORS: Record<Exclude<Ink, 'erase'>, [number, number, number]> = {
-  ink: [14, 8, 4],
-  cream: [240, 226, 190],
-  glow: [190, 255, 120],
+type Drip = {
+  x: number
+  y: number
+  len: number
+  target: number
+  w: number
+  speed: number
+  color: string
+  glow: boolean
+  /** deslocamento lateral atual e a "onda" do balanço */
+  dx: number
+  phase: number
+  wobble: number
 }
 
-type Drip = { x: number; y: number; len: number; target: number; w: number; speed: number }
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
 export class Painter {
   readonly canvas = document.createElement('canvas')
+  readonly glowCanvas = document.createElement('canvas')
   readonly texture: THREE.CanvasTexture
+  readonly glowTexture: THREE.CanvasTexture
   dirty = false
   private ctx: CanvasRenderingContext2D
+  private gctx: CanvasRenderingContext2D
   private snap = document.createElement('canvas')
-  private snapCtx: CanvasRenderingContext2D
-  private history: { t: number; x: number; y: number; data: ImageData }[] = []
+  private snapGlow = document.createElement('canvas')
+  private history: { t: number; x: number; y: number; color: ImageData; glow: ImageData }[] = []
   private box = [Infinity, Infinity, -Infinity, -Infinity]
   private last: [number, number] | null = null
   private drips: Drip[] = []
-  private brushes = new Map<Ink, CanvasGradient>()
+  private brushes = new Map<string, CanvasGradient>()
   private used = false
 
   constructor() {
-    this.canvas.width = this.snap.width = W
-    this.canvas.height = this.snap.height = H
-    this.ctx = this.canvas.getContext('2d')!
-    this.snapCtx = this.snap.getContext('2d', { willReadFrequently: true })!
-    for (const ink of ['ink', 'cream', 'glow', 'erase'] as Ink[]) {
-      const [r, g, b] = ink === 'erase' ? [0, 0, 0] : COLORS[ink]
-      const grad = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
-      grad.addColorStop(0, `rgba(${r},${g},${b},1)`)
-      grad.addColorStop(0.62, `rgba(${r},${g},${b},1)`)
-      grad.addColorStop(1, `rgba(${r},${g},${b},0)`)
-      this.brushes.set(ink, grad)
+    for (const c of [this.canvas, this.glowCanvas, this.snap, this.snapGlow]) {
+      c.width = W
+      c.height = H
     }
+    this.ctx = this.canvas.getContext('2d')!
+    this.gctx = this.glowCanvas.getContext('2d')!
     this.texture = new THREE.CanvasTexture(this.canvas)
     this.texture.colorSpace = THREE.SRGBColorSpace
     this.texture.wrapS = THREE.RepeatWrapping
+    this.glowTexture = new THREE.CanvasTexture(this.glowCanvas)
+    this.glowTexture.wrapS = THREE.RepeatWrapping
   }
 
   get lastStep() {
@@ -58,8 +67,12 @@ export class Painter {
   }
 
   begin() {
-    this.snapCtx.clearRect(0, 0, W, H)
-    this.snapCtx.drawImage(this.canvas, 0, 0)
+    const s = this.snap.getContext('2d', { willReadFrequently: true })!
+    const g = this.snapGlow.getContext('2d', { willReadFrequently: true })!
+    s.clearRect(0, 0, W, H)
+    s.drawImage(this.canvas, 0, 0)
+    g.clearRect(0, 0, W, H)
+    g.drawImage(this.glowCanvas, 0, 0)
     this.box = [Infinity, Infinity, -Infinity, -Infinity]
     this.last = null
   }
@@ -71,8 +84,14 @@ export class Painter {
     const w = Math.min(W, Math.ceil(this.box[2])) - x
     const h = Math.min(H, Math.ceil(this.box[3])) - y
     if (w <= 0 || h <= 0) return
-    this.history.push({ t: nextStep(), x, y, data: this.snapCtx.getImageData(x, y, w, h) })
-    if (this.history.length > 40) this.history.shift()
+    this.history.push({
+      t: nextStep(),
+      x,
+      y,
+      color: this.snap.getContext('2d')!.getImageData(x, y, w, h),
+      glow: this.snapGlow.getContext('2d')!.getImageData(x, y, w, h),
+    })
+    if (this.history.length > 30) this.history.shift()
   }
 
   lift() {
@@ -93,29 +112,38 @@ export class Painter {
     this.last = [x, y]
   }
 
-  /** escorre as gotas de tinta preta aos poucos, descendo pela casca */
+  /** escorre as gotas aos poucos, descendo pela casca: começam rápidas, freiam, balançam e terminam numa bolinha */
   update(dt: number) {
     if (!this.drips.length) return
-    const ctx = this.ctx
-    ctx.strokeStyle = ctx.fillStyle = `rgb(${COLORS.ink.join(',')})`
-    ctx.lineCap = 'round'
+    for (const c of [this.ctx, this.gctx]) c.lineCap = 'round'
     for (const d of this.drips) {
       const slow = 1 - (d.len / d.target) * 0.8
       const grow = Math.min(d.target - d.len, d.speed * slow * dt)
       if (grow <= 0) continue
-      ctx.lineWidth = d.w
-      for (const ox of [0, -W, W]) {
-        ctx.beginPath()
-        ctx.moveTo(d.x + ox, d.y + d.len)
-        ctx.lineTo(d.x + ox, d.y + d.len + grow)
-        ctx.stroke()
+      // afina conforme desce, como a tinta que vai acabando
+      const width = d.w * (1 - 0.35 * (d.len / d.target))
+      const nx = d.wobble * d.w * Math.sin(d.phase + (d.len + grow) * 0.12)
+      const layers: [CanvasRenderingContext2D, string][] = [[this.ctx, d.color]]
+      if (d.glow) layers.push([this.gctx, '#fff'])
+      for (const [c, color] of layers) {
+        c.strokeStyle = c.fillStyle = color
+        c.lineWidth = width
+        for (const ox of [0, -W, W]) {
+          c.beginPath()
+          c.moveTo(d.x + d.dx + ox, d.y + d.len)
+          c.lineTo(d.x + nx + ox, d.y + d.len + grow)
+          c.stroke()
+        }
       }
+      d.dx = nx
       d.len += grow
       if (d.target - d.len < 0.5) {
-        for (const ox of [0, -W, W]) {
-          ctx.beginPath()
-          ctx.arc(d.x + ox, d.y + d.len, d.w * 0.8, 0, Math.PI * 2)
-          ctx.fill()
+        for (const [c] of layers) {
+          for (const ox of [0, -W, W]) {
+            c.beginPath()
+            c.ellipse(d.x + d.dx + ox, d.y + d.len, d.w * 0.75, d.w * 0.95, 0, 0, Math.PI * 2)
+            c.fill()
+          }
         }
         d.len = d.target
       }
@@ -128,7 +156,8 @@ export class Painter {
     const step = this.history.pop()
     if (!step) return
     this.drips = []
-    this.ctx.putImageData(step.data, step.x, step.y)
+    this.ctx.putImageData(step.color, step.x, step.y)
+    this.gctx.putImageData(step.glow, step.x, step.y)
     this.dirty = true
   }
 
@@ -136,6 +165,7 @@ export class Painter {
     if (!this.used) return
     this.begin()
     this.ctx.clearRect(0, 0, W, H)
+    this.gctx.clearRect(0, 0, W, H)
     this.box = [0, 0, W, H]
     this.end()
     this.drips = []
@@ -143,7 +173,7 @@ export class Painter {
     this.dirty = true
   }
 
-  /** pintura em PNG transparente para a exposição (null se não pintou nada) */
+  /** pintura em PNG para a exposição: cor em cima, brilho embaixo (null se não pintou nada) */
   export() {
     if (!this.used) return null
     const probe = document.createElement('canvas')
@@ -154,53 +184,114 @@ export class Painter {
     const d = g.getImageData(0, 0, 64, 32).data
     let any = false
     for (let i = 3; i < d.length && !any; i += 4) any = d[i] > 8
-    return any ? this.canvas.toDataURL('image/png') : null
+    if (!any) return null
+    const out = document.createElement('canvas')
+    out.width = W
+    out.height = H * 2
+    const o = out.getContext('2d')!
+    o.drawImage(this.canvas, 0, 0)
+    o.drawImage(this.glowCanvas, 0, H)
+    return out.toDataURL('image/png')
   }
 
   save() {
-    const c = document.createElement('canvas')
-    c.width = W
-    c.height = H
-    c.getContext('2d')!.drawImage(this.canvas, 0, 0)
-    return { canvas: c, used: this.used }
+    const color = document.createElement('canvas')
+    const glow = document.createElement('canvas')
+    color.width = glow.width = W
+    color.height = glow.height = H
+    color.getContext('2d')!.drawImage(this.canvas, 0, 0)
+    glow.getContext('2d')!.drawImage(this.glowCanvas, 0, 0)
+    return { color, glow, used: this.used }
   }
 
-  restore(saved: { canvas: CanvasImageSource; used: boolean } | null) {
+  restore(saved: { color: CanvasImageSource; glow?: CanvasImageSource; used: boolean } | null) {
     this.drips = []
     this.ctx.clearRect(0, 0, W, H)
-    if (saved) this.ctx.drawImage(saved.canvas, 0, 0, W, H)
+    this.gctx.clearRect(0, 0, W, H)
+    if (saved) {
+      this.ctx.drawImage(saved.color, 0, 0, W, H)
+      if (saved.glow) this.gctx.drawImage(saved.glow, 0, 0, W, H)
+    }
     this.used = !!saved?.used
     this.dirty = true
   }
 
+  /** pintura vinda da exposição: imagem com a cor em cima e o brilho embaixo */
+  restoreImage(img: HTMLImageElement) {
+    this.drips = []
+    this.ctx.clearRect(0, 0, W, H)
+    this.gctx.clearRect(0, 0, W, H)
+    const half = img.naturalHeight > img.naturalWidth * 0.75
+    const h = half ? img.naturalHeight / 2 : img.naturalHeight
+    this.ctx.drawImage(img, 0, 0, img.naturalWidth, h, 0, 0, W, H)
+    if (half) this.gctx.drawImage(img, 0, h, img.naturalWidth, h, 0, 0, W, H)
+    this.used = true
+    this.dirty = true
+  }
+
+  private brush(color: string) {
+    let grad = this.brushes.get(color)
+    if (grad) return grad
+    // direto do hex: THREE.Color passaria para linear e a textura (sRGB) escureceria de novo
+    const n = parseInt(color.slice(1), 16)
+    const rgb = `${n >> 16},${(n >> 8) & 255},${n & 255}`
+    grad = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
+    grad.addColorStop(0, `rgba(${rgb},1)`)
+    grad.addColorStop(0.62, `rgba(${rgb},1)`)
+    grad.addColorStop(1, `rgba(${rgb},0)`)
+    this.brushes.set(color, grad)
+    return grad
+  }
+
   private stamp(x: number, y: number, rx: number, ry: number, ink: Ink) {
-    const ctx = this.ctx
-    ctx.fillStyle = this.brushes.get(ink)!
-    ctx.globalCompositeOperation = ink === 'erase' ? 'destination-out' : 'source-over'
-    for (const ox of [0, -W, W]) {
-      const cx = x + ox
-      if (cx + rx < 0 || cx - rx > W) continue
-      ctx.setTransform(rx, 0, 0, ry, cx, y)
-      ctx.beginPath()
-      ctx.arc(0, 0, 1, 0, Math.PI * 2)
-      ctx.fill()
-      this.grow(cx - rx, y - ry, cx + rx, y + ry)
+    const erase = ink === 'erase'
+    const ops: [CanvasRenderingContext2D, string | CanvasGradient, GlobalCompositeOperation][] = erase
+      ? [
+          [this.ctx, this.brush('#000000'), 'destination-out'],
+          [this.gctx, this.brush('#000000'), 'destination-out'],
+        ]
+      : [
+          [this.ctx, this.brush(ink.color), 'source-over'],
+          // tinta comum por cima de tinta brilhante apaga o brilho dali
+          [this.gctx, this.brush(ink.glow ? '#ffffff' : '#000000'), ink.glow ? 'source-over' : 'destination-out'],
+        ]
+    for (const [c, fill, op] of ops) {
+      c.fillStyle = fill
+      c.globalCompositeOperation = op
+      for (const ox of [0, -W, W]) {
+        const cx = x + ox
+        if (cx + rx < 0 || cx - rx > W) continue
+        c.setTransform(rx, 0, 0, ry, cx, y)
+        c.beginPath()
+        c.arc(0, 0, 1, 0, Math.PI * 2)
+        c.fill()
+        this.grow(cx - rx, y - ry, cx + rx, y + ry)
+      }
+      c.setTransform(1, 0, 0, 1, 0, 0)
+      c.globalCompositeOperation = 'source-over'
     }
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.globalCompositeOperation = 'source-over'
-    if (ink !== 'erase') this.used = true
-    // tinta preta escorre de vez em quando
-    if (ink === 'ink' && this.drips.length < 24 && Math.random() < 0.09) {
+    if (erase) return void (this.dirty = true)
+    this.used = true
+
+    // toda tinta escorre de vez em quando; a rala corre rápido e longe, a grossa devagar e curta
+    const f = ink.flow
+    if (this.drips.length < 30 && Math.random() < lerp(0.07, 0.09, f)) {
       const d: Drip = {
         x: x + (Math.random() * 2 - 1) * rx * 0.5,
         y: y + ry * 0.35,
         len: 0,
-        target: ry * (1.2 + Math.random() * 3.5),
-        w: Math.max(2, rx * (0.16 + Math.random() * 0.14)),
-        speed: 30 + Math.random() * 40,
+        target: ry * lerp(0.7, 1.2, f) * (1 + Math.random() * lerp(2, 3.9, f) / lerp(0.7, 1.2, f)),
+        w: Math.max(2, rx * lerp(0.3, 0.17, f) * (1 + Math.random() * 0.6)),
+        speed: lerp(12, 30, f) + Math.random() * lerp(18, 40, f),
+        color: ink.color,
+        glow: ink.glow,
+        dx: 0,
+        phase: Math.random() * Math.PI * 2,
+        wobble: lerp(0.2, 0.5, f),
       }
       this.drips.push(d)
-      this.grow(d.x - d.w * 2, d.y, d.x + d.w * 2, d.y + d.target + d.w * 2)
+      const side = d.w * (2 + d.wobble)
+      this.grow(d.x - side, d.y, d.x + side, d.y + d.target + d.w * 2)
     }
     this.dirty = true
   }

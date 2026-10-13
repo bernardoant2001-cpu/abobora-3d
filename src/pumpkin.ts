@@ -475,7 +475,7 @@ export function createCarvedPumpkin(
   outer: THREE.Mesh,
   carver: Carver,
   glow: { value: number },
-  paint: THREE.Texture,
+  paint: { texture: THREE.Texture; glowTexture: THREE.Texture },
   dark: { value: number },
 ) {
   const lidOpen = { value: 0 }
@@ -490,12 +490,13 @@ export function createCarvedPumpkin(
     shader.uniforms.uLid = lidOpen
     shader.uniforms.uGuide = { value: carver.guideTexture }
     shader.uniforms.uWall = { value: (1 - WALL) * RADIUS * 0.9 }
-    shader.uniforms.uPaint = { value: paint }
+    shader.uniforms.uPaint = { value: paint.texture }
+    shader.uniforms.uPaintGlow = { value: paint.glowTexture }
     shader.uniforms.uDark = dark
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        `#include <common>\nuniform float uGlow;\nuniform float uWall;\nuniform float uDark;\nuniform sampler2D uGuide;\nuniform sampler2D uPaint;\n${LID_GLSL}`,
+        `#include <common>\nuniform float uGlow;\nuniform float uWall;\nuniform float uDark;\nuniform sampler2D uGuide;\nuniform sampler2D uPaint;\nuniform sampler2D uPaintGlow;\n${LID_GLSL}`,
       )
       .replace(
         '#include <alphamap_pars_fragment>',
@@ -562,7 +563,7 @@ export function createCarvedPumpkin(
         // pintura por cima da casca; a tinta que brilha no escuro é a de verde bem maior que azul
         vec4 pt = texture2D( uPaint, vAlphaMapUv );
         float paintA = pt.a * skinSide * ( 1.0 - rim );
-        float paintGlow = smoothstep( 0.45, 0.65, pt.g - pt.b ) * paintA;
+        float paintGlow = texture2D( uPaintGlow, vAlphaMapUv ).a * paintA;
         diffuseColor.rgb = mix( diffuseColor.rgb, pt.rgb, paintA );
         shave *= 1.0 - paintA;
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.01, 0.006, 0.002 ), ink );
@@ -575,7 +576,11 @@ export function createCarvedPumpkin(
         totalEmissiveRadiance += vec3( 0.9, 0.5, 0.14 ) * rim * ( 1.0 - ink ) * uGlow * 0.7 + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;
         totalEmissiveRadiance += vec3( 0.85, 0.38, 0.08 ) * shave * uGlow * 0.3;
         totalEmissiveRadiance += wallColor * wallHit * ( 0.2 + 0.35 * wallDepth ) * uGlow;
-        totalEmissiveRadiance += vec3( 0.75, 1.0, 0.45 ) * paintGlow * ( 0.08 + 1.4 * uDark );`,
+        // brilho igualado pela luminância: verde-limão não estoura em branco e azul/roxo não somem
+        float glowLum = dot( pt.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+        // um tiquinho de cor própria: sob a luz quente, azul e roxo viravam cinza
+        totalEmissiveRadiance += pt.rgb * paintA * 0.2 * ( 1.0 - 0.75 * uDark );
+        totalEmissiveRadiance += pt.rgb * clamp( 0.3 / max( glowLum, 0.01 ), 0.45, 1.5 ) * paintGlow * ( 0.6 + 0.45 * uDark );`,
       )
   }
 

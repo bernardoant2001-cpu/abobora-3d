@@ -9,9 +9,9 @@ const SHAPES = ['Redonda', 'Alta', 'Achatada', 'Cabaca']
 const ACCESSORIES = ['AccWitch', 'AccTopHat', 'AccBow', 'AccHorns']
 const MAX_MASK = 700_000
 const MAX_THUMB = 260_000
-const MAX_PAINT = 500_000
+const MAX_PAINT = 800_000
 const MAX_PENDING = 150
-const MAX_BODY = 2_000_000
+const MAX_BODY = 2_500_000
 
 export type Entry = {
   id: string

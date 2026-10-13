@@ -100,7 +100,7 @@ const glow = { value: 1 }
 const updateWorld = createWorld(scene, gltf.scene)
 const painter = new Painter()
 const nightGlow = { value: 0 }
-const pumpkin = createCarvedPumpkin(adoptPumpkin(gltf.scene.getObjectByName('Pumpkin')!), carver, glow, painter.texture, nightGlow)
+const pumpkin = createCarvedPumpkin(adoptPumpkin(gltf.scene.getObjectByName('Pumpkin')!), carver, glow, painter, nightGlow)
 const surprises = createSurprises(scene)
 
 let lastTick = 0
@@ -180,7 +180,9 @@ const CURSOR_COLOR: Record<Tool, string> = {
   shave: '#ffd27a',
   restore: '#9dffb0',
 }
-let paintInk: Ink = 'ink'
+// tinta escolhida: cor, se brilha no escuro, quão rala é (para o escorrido) ou borracha
+const paintState = { color: '#0e0804', glow: false, flow: 1, erase: false }
+const currentInk = (): Ink => (paintState.erase ? 'erase' : { color: paintState.color, glow: paintState.glow, flow: paintState.flow })
 // formas prontas: encosta no centro e arrasta; a distância é o tamanho e a direção aponta o topo da forma
 let shape: Shape = SHAPES[0]
 let shapeMode: 'carve' | 'shave' = 'carve'
@@ -263,7 +265,7 @@ function brush(hit: THREE.Intersection | undefined, e: { clientX: number; client
     lastBrush = null
     return 0
   }
-  if (tool === 'paint') painter.paint(hit.uv, size, paintInk)
+  if (tool === 'paint') painter.paint(hit.uv, size, currentInk())
   else carver.paint(hit.uv, size, tool as Brush)
   const moved = lastBrush ? Math.hypot(e.clientX - lastBrush.x, e.clientY - lastBrush.y) : 0
   lastBrush = { x: e.clientX, y: e.clientY }
@@ -467,14 +469,43 @@ function setTool(t: Tool) {
 }
 toolButtons.forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool as Tool)))
 
+// paleta: cores prontas (cada uma com sua consistência), cor livre, borracha e a chave de brilhar no escuro
 const paintbar = $('#paintbar')
-const inkButtons = document.querySelectorAll<HTMLButtonElement>('[data-ink]')
-inkButtons.forEach((b) =>
+const swatches = document.querySelectorAll<HTMLButtonElement>('[data-color], #paint-erase')
+const customColor = $<HTMLInputElement>('#paint-custom')
+const glowToggle = $<HTMLButtonElement>('#paint-glow')
+const selectSwatch = (el: HTMLElement) => {
+  swatches.forEach((x) => x.setAttribute('aria-pressed', String(x === el)))
+  $('#paint-custom-wrap').classList.toggle('on', el === customColor)
+}
+document.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((b) =>
   b.addEventListener('click', () => {
-    paintInk = b.dataset.ink as Ink
-    inkButtons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+    paintState.color = b.dataset.color!
+    paintState.flow = Number(b.dataset.flow ?? 0.6)
+    paintState.erase = false
+    selectSwatch(b)
   }),
 )
+customColor.addEventListener('input', () => {
+  paintState.color = customColor.value
+  paintState.flow = 0.6
+  paintState.erase = false
+  $('#paint-custom-wrap').style.setProperty('--picked', customColor.value)
+  selectSwatch(customColor)
+})
+customColor.addEventListener('click', () => {
+  paintState.color = customColor.value
+  paintState.erase = false
+  selectSwatch(customColor)
+})
+$('#paint-erase').addEventListener('click', () => {
+  paintState.erase = true
+  selectSwatch($('#paint-erase'))
+})
+glowToggle.addEventListener('click', () => {
+  paintState.glow = !paintState.glow
+  glowToggle.setAttribute('aria-pressed', String(paintState.glow))
+})
 
 const sizeInput = $<HTMLInputElement>('#size')
 const syncSize = () => {
@@ -697,7 +728,8 @@ const gallery = createGallery({
     if (!mine) mine = { mask: carver.saveState(), paint: painter.save(), shape: look.shape, accessory: look.accessory }
     if (tool === 'cut' || tool === 'shape' || tool === 'paint') setTool('carve')
     carver.restoreState(mask)
-    painter.restore(paint ? { canvas: paint, used: true } : null)
+    if (paint) painter.restoreImage(paint)
+    else painter.restore(null)
     applyLook(entry.shape, entry.accessory)
     spinVel = 0
     pumpkin.outer.rotation.y = 0
@@ -876,6 +908,7 @@ renderer.setAnimationLoop((ms) => {
   painter.update(dt)
   if (painter.dirty) {
     painter.texture.needsUpdate = true
+    painter.glowTexture.needsUpdate = true
     painter.dirty = false
   }
 

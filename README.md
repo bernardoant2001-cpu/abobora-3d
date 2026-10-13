@@ -9,7 +9,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 - **Faca**: esculpe à mão livre, com tamanho de lâmina ajustável — sementes e polpa saltam na mesa
 - **Recorte**: marque os cantos e corte com bordas retas (ótimo para dentes e triângulos)
 - **Formas**: círculo, triângulo, losango, estrela, coração, lua, raio e morcego, para recortar ou raspar; arraste para escolher o tamanho e o giro
-- **Pintar**: tinta preta que escorre pela casca, tinta creme e tinta que brilha no escuro, além da borracha
+- **Pintar**: paleta de tintas ou qualquer cor que você quiser, todas escorrendo pela casca (a rala corre mais, a grossa menos); qualquer cor pode brilhar no escuro, e tem borracha
 - **Raspar**: tira só a casca, sem furar; a parte raspada brilha fraquinho com a vela
 - **Remendo**: devolve a casca onde você cortou demais
 - **Tampa**: corte e levante a tampa da abóbora

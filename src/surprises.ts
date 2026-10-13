@@ -59,7 +59,8 @@ function createCat(room: THREE.Object3D) {
       pose(head, [head.up, turn * 1.3], [head.fwd, turn * 0.18 + Math.sin(phase * 2) * 0.04 * walk], [head.side, -0.05 * bob + turn * 0.06])
       // rabo ondula em onda: cada osso atrasado em relação ao anterior
       tail.forEach((b, k) => {
-        const amp = (walk ? 0.18 : 0.26) + k * 0.03
+        // base quase parada, movimento cresce até a ponta
+        const amp = ((walk ? 0.18 : 0.26) + k * 0.03) * [0.15, 0.55, 0.8, 1, 1, 1][k]
         pose(b, [b.side, Math.sin(t * (walk ? 3.2 : 4.4) - k * 0.75) * amp * 0.5], [b.fwd, Math.sin(t * 2.3 - k * 0.6) * amp])
       })
       if (eye) eye.emissiveIntensity = 0.15 + turn * 0.9 + mood * 1.2

@@ -254,6 +254,12 @@ class Cat:
             lengths.append(lengths[-1] + (b_ - a_).length)
 
         def tail_w(p):
+            # o trecho que fica dentro do corpo segue a coluna: a base nunca descola
+            a0, ab0 = pts[0], pts[1] - pts[0]
+            back = (p - a0).dot(ab0) / ab0.length_squared
+            if back < 0:
+                f = _smooth(-0.6, 0.0, back)
+                return {'CatSpine': 1 - f * 0.5, 'CatTail0': f * 0.5}
             best, bt = 0, 1e9
             for k in range(6):
                 a_, b_ = pts[k], pts[k + 1]
@@ -271,7 +277,8 @@ class Cat:
                 w = {f'CatTail{best}': 1 - f, (f'CatTail{best - 1}' if best > 0 else 'CatSpine'): f}
             return w
 
-        self._tube('CatTail', _catmull(pts, 40), lambda t: 0.032 - 0.016 * t, self.fur, tail_w, 10)
+        inside = Vector((-0.15, 0.31, 0))
+        self._tube('CatTail', _catmull([inside] + pts, 46), lambda t: 0.036 - 0.02 * t, self.fur, tail_w, 10)
 
     def _ear(self, s, hx, hy, weights):
         bm = bmesh.new()

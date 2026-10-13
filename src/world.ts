@@ -236,7 +236,7 @@ function bats(centers: THREE.Vector3[]) {
         ry: 0.25 + rand() * 0.6,
         speed: (0.28 + rand() * 0.25) * (rand() < 0.5 ? 1 : -1),
         phase: rand() * Math.PI * 2 + i,
-        flapSpeed: 13 + rand() * 6,
+        flapSpeed: 24 + rand() * 8,
       }
     }),
   )
@@ -253,14 +253,17 @@ function bats(centers: THREE.Vector3[]) {
         f.bat.lookAt(next)
         // inclina para dentro da curva
         f.bat.rotateZ(-Math.cos(a) * 0.4 * Math.sign(f.speed))
-        // batida: o braço desce, a mão vem atrasada e dobra no pulso; às vezes plana
-        const glide = Math.sin(t * 0.7 + f.phase) > 0.75 ? 0.15 : 1
+        // batida de desenho: asas sobem em V e descem abaixo do corpo, a mão chicoteia atrasada;
+        // de vez em quando plana com as asas abertas
+        const glide = Math.sin(t * 0.5 + f.phase) > 0.85 ? 0.12 : 1
         const beat = t * f.flapSpeed + f.phase
+        const s = Math.sin(beat)
         f.wings.forEach(({ shoulder, wrist }) => {
-          shoulder.rotation.z = (Math.sin(beat) * 0.5 + 0.08) * glide
-          wrist.rotation.z = (Math.sin(beat - 0.9) * 0.45 - 0.1) * glide
+          shoulder.rotation.z = (s * 0.95 + 0.15) * glide
+          wrist.rotation.z = (Math.sin(beat - 1.1) * 0.75 - 0.05) * glide
         })
-        f.bat.position.y += Math.sin(beat) * -0.04 * glide
+        // o corpo sobe quando as asas descem
+        f.bat.position.y -= s * 0.09 * glide
       }
     },
   }

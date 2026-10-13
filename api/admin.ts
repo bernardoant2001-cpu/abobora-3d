@@ -1,6 +1,6 @@
 import { del, list, rename } from '@vercel/blob'
 import { timingSafeEqual } from 'node:crypto'
-import { readEntries, sameSiteJson, type Entry } from './gallery'
+import { readEntries, sameSiteJson, type Entry } from './gallery.js'
 
 // GET  /api/admin?status=pending|approved → lista para moderar
 // POST /api/admin { action: 'approve' | 'reject' | 'remove', id } → aprova, recusa ou tira da exposição

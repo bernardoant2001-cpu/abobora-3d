@@ -167,76 +167,122 @@ function stars() {
   )
 }
 
-/** morcegos de silhueta: asa em duas partes (braço + mão com "dedos"), dobrando no pulso */
-function bats(centers: THREE.Vector3[]) {
-  const ink = new THREE.MeshBasicMaterial({ color: '#07040c', side: THREE.DoubleSide, fog: false })
+const BAT_FRAMES = 8
 
-  // parte interna da asa: do ombro até o pulso
-  const arm = new THREE.Shape()
-  arm.moveTo(0, 0.05)
-  arm.quadraticCurveTo(0.14, 0.13, 0.3, 0.1)
-  arm.lineTo(0.3, -0.02)
-  arm.quadraticCurveTo(0.2, -0.06, 0.12, -0.03)
-  arm.quadraticCurveTo(0.06, -0.08, 0, -0.06)
-  // parte externa: do pulso até a ponta, com a borda recortada entre os dedos
-  const hand = new THREE.Shape()
-  hand.moveTo(0, 0.1)
-  hand.quadraticCurveTo(0.2, 0.16, 0.42, 0.06)
-  hand.quadraticCurveTo(0.33, 0.02, 0.33, -0.05)
-  hand.quadraticCurveTo(0.26, -0.01, 0.22, -0.09)
-  hand.quadraticCurveTo(0.15, -0.04, 0.1, -0.1)
-  hand.quadraticCurveTo(0.05, -0.04, 0, -0.02)
-  const armGeo = new THREE.ShapeGeometry(arm, 8).rotateX(-Math.PI / 2)
-  const handGeo = new THREE.ShapeGeometry(hand, 8).rotateX(-Math.PI / 2)
-
-  const bodyGeo = new THREE.SphereGeometry(1, 10, 8)
-  const earGeo = new THREE.ConeGeometry(0.025, 0.06, 4)
-
-  const make = () => {
-    const bat = new THREE.Group()
-    const body = new THREE.Mesh(bodyGeo, ink)
-    body.scale.set(0.055, 0.05, 0.11)
-    const head = new THREE.Mesh(bodyGeo, ink)
-    head.scale.setScalar(0.042)
-    head.position.set(0, 0.015, 0.1)
-    bat.add(body, head)
+/** folha de quadros de um morcego de desenho: asas do V para cima até abaixo do corpo e de volta */
+function batSheet() {
+  const S = 256
+  const [c, g] = canvas(S * BAT_FRAMES, S)
+  g.lineJoin = 'round'
+  g.lineCap = 'round'
+  for (let f = 0; f < BAT_FRAMES; f++) {
+    g.save()
+    g.translate(f * S + S / 2, S / 2 + 6)
+    const phase = (f / BAT_FRAMES) * Math.PI * 2
+    const lift = Math.sin(phase) // 1 = asas no alto, -1 = embaixo
+    const ang = lift * 0.95 + 0.1
+    // a ponta atrasa: quando o braço sobe a mão ainda aponta para baixo, e vice-versa
+    const fold = Math.sin(phase - 1.1) * 0.55
+    g.fillStyle = '#0a0610'
+    g.strokeStyle = '#0a0610'
     for (const s of [-1, 1]) {
-      const ear = new THREE.Mesh(earGeo, ink)
-      ear.position.set(s * 0.022, 0.06, 0.1)
-      ear.rotation.z = -s * 0.3
-      bat.add(ear)
+      const sh = { x: s * 12, y: -6 }
+      const wr = { x: sh.x + s * Math.cos(ang) * 50, y: sh.y - Math.sin(ang) * 50 }
+      const tipAng = ang + fold
+      const tips = [0.4, -0.12, -0.62].map((d, k) => {
+        const a = tipAng + d
+        const len = [62, 56, 44][k]
+        return { x: wr.x + s * Math.cos(a) * len, y: wr.y - Math.sin(a) * len }
+      })
+      const tail = { x: s * 9, y: 22 }
+      // membrana: borda de ataque reta, borda de fuga recortada entre os dedos
+      g.beginPath()
+      g.moveTo(sh.x, sh.y - 4)
+      g.quadraticCurveTo((sh.x + wr.x) / 2, (sh.y + wr.y) / 2 - 7, wr.x, wr.y)
+      g.lineTo(tips[0].x, tips[0].y)
+      const scallop = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+        const mx = (a.x + b.x) / 2
+        const my = (a.y + b.y) / 2
+        g.quadraticCurveTo(mx + (wr.x - mx) * 0.32, my + (wr.y - my) * 0.32, b.x, b.y)
+      }
+      scallop(tips[0], tips[1])
+      scallop(tips[1], tips[2])
+      scallop(tips[2], tail)
+      g.closePath()
+      g.fill()
+      // ossos dos dedos e garrinha no pulso
+      g.lineWidth = 3
+      for (const tp of tips) {
+        g.beginPath()
+        g.moveTo(wr.x, wr.y)
+        g.lineTo(tp.x, tp.y)
+        g.stroke()
+      }
+      g.beginPath()
+      g.moveTo(wr.x, wr.y)
+      g.lineTo(wr.x + s * 4, wr.y - 9)
+      g.stroke()
     }
-    const wings = [-1, 1].map((s) => {
-      const shoulder = new THREE.Group()
-      shoulder.scale.x = s
-      shoulder.position.set(s * 0.03, 0.01, 0.02)
-      shoulder.add(new THREE.Mesh(armGeo, ink))
-      const wrist = new THREE.Group()
-      wrist.position.x = 0.3
-      wrist.add(new THREE.Mesh(handGeo, ink))
-      shoulder.add(wrist)
-      bat.add(shoulder)
-      return { shoulder, wrist }
-    })
-    bat.traverse((o) => o.layers.set(FX))
-    return { bat, wings }
+    // corpo, cabeça e orelhas
+    g.beginPath()
+    g.ellipse(0, 6, 15, 22, 0, 0, Math.PI * 2)
+    g.fill()
+    g.beginPath()
+    g.arc(0, -20, 13, 0, Math.PI * 2)
+    g.fill()
+    for (const s of [-1, 1]) {
+      g.beginPath()
+      g.moveTo(s * 4, -28)
+      g.lineTo(s * 13, -46)
+      g.lineTo(s * 13, -24)
+      g.fill()
+    }
+    // olhinhos amarelos e presas
+    g.fillStyle = '#ffd36b'
+    for (const s of [-1, 1]) {
+      g.beginPath()
+      g.ellipse(s * 5, -21, 3.2, 2.2, s * 0.35, 0, Math.PI * 2)
+      g.fill()
+    }
+    g.fillStyle = '#f4ead2'
+    for (const s of [-1, 1]) {
+      g.beginPath()
+      g.moveTo(s * 2, -12)
+      g.lineTo(s * 5, -12)
+      g.lineTo(s * 3.5, -7)
+      g.fill()
+    }
+    g.restore()
   }
+  const t = srgb(c)
+  t.anisotropy = 1
+  t.repeat.set(1 / BAT_FRAMES, 1)
+  return t
+}
 
+/** morcegos de animação quadro a quadro: sempre de frente para a câmera, voando em rotas 3D */
+function bats(centers: THREE.Vector3[]) {
+  const sheet = batSheet()
   const rand = rng(77)
-  // cada morcego com rota própria: oito em volta do centro, altura e velocidade diferentes
   const flock = centers.flatMap((c, ci) =>
     Array.from({ length: ci === 0 ? 5 : 3 }, (_, i) => {
-      const m = make()
-      m.bat.scale.setScalar(1.6 + rand() * 0.9)
+      const map = sheet.clone()
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map, transparent: true, alphaTest: 0.4, depthWrite: false, fog: false }),
+      )
+      const size = 1.5 + rand() * 1.0
+      sprite.layers.set(FX)
       return {
-        ...m,
+        sprite,
+        map,
+        size,
         c,
         rx: 1.8 + rand() * 2.6,
         rz: 0.8 + rand() * 1.4,
         ry: 0.25 + rand() * 0.6,
         speed: (0.28 + rand() * 0.25) * (rand() < 0.5 ? 1 : -1),
         phase: rand() * Math.PI * 2 + i,
-        flapSpeed: 24 + rand() * 8,
+        flap: 3.6 + rand() * 1.4,
       }
     }),
   )
@@ -244,26 +290,23 @@ function bats(centers: THREE.Vector3[]) {
   const at = (f: (typeof flock)[number], a: number, out: THREE.Vector3) =>
     out.set(f.c.x + Math.sin(a) * f.rx, f.c.y + Math.sin(a * 2 + f.phase) * f.ry + Math.sin(a * 3.3) * 0.15, f.c.z + Math.sin(a * 2) * f.rz)
   return {
-    group: new THREE.Group().add(...flock.map((f) => f.bat)),
+    group: new THREE.Group().add(...flock.map((f) => f.sprite)),
     update(t: number) {
       for (const f of flock) {
         const a = t * f.speed + f.phase
-        at(f, a, f.bat.position)
-        at(f, a + 0.04 * Math.sign(f.speed), next)
-        f.bat.lookAt(next)
-        // inclina para dentro da curva
-        f.bat.rotateZ(-Math.cos(a) * 0.4 * Math.sign(f.speed))
-        // batida de desenho: asas sobem em V e descem abaixo do corpo, a mão chicoteia atrasada;
-        // de vez em quando plana com as asas abertas
-        const glide = Math.sin(t * 0.5 + f.phase) > 0.85 ? 0.12 : 1
-        const beat = t * f.flapSpeed + f.phase
-        const s = Math.sin(beat)
-        f.wings.forEach(({ shoulder, wrist }) => {
-          shoulder.rotation.z = (s * 0.95 + 0.15) * glide
-          wrist.rotation.z = (Math.sin(beat - 1.1) * 0.75 - 0.05) * glide
-        })
+        at(f, a, f.sprite.position)
+        at(f, a + 0.03 * Math.sign(f.speed), next)
+        // planando de vez em quando: asas abertas paradas
+        const glide = Math.sin(t * 0.5 + f.phase) > 0.85
+        const cycle = t * f.flap + f.phase
+        const frame = glide ? 0 : Math.floor(cycle * BAT_FRAMES) % BAT_FRAMES
+        f.map.offset.x = frame / BAT_FRAMES
+        // vira para o lado em que está indo (a câmera olha para -z, então x da tela ≈ x do mundo)
+        const dir = next.x >= f.sprite.position.x ? 1 : -1
+        f.sprite.scale.set(f.size * dir, f.size, 1)
+        f.sprite.material.rotation = THREE.MathUtils.clamp((next.y - f.sprite.position.y) * 6, -0.35, 0.35) * dir
         // o corpo sobe quando as asas descem
-        f.bat.position.y -= s * 0.09 * glide
+        if (!glide) f.sprite.position.y -= Math.sin((cycle % 1) * Math.PI * 2) * 0.07
       }
     },
   }

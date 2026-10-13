@@ -92,7 +92,7 @@ carver.texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
 const glow = { value: 1 }
 const updateWorld = createWorld(scene, gltf.scene)
 const pumpkin = createCarvedPumpkin(adoptPumpkin(gltf.scene.getObjectByName('Pumpkin')!), carver, glow)
-const surprises = createSurprises(scene, gltf.scene)
+const surprises = createSurprises(scene)
 
 let lastTick = 0
 const colliderState = { center: new THREE.Vector3(), radius: RADIUS, height: RADIUS * 0.8 }
@@ -630,7 +630,7 @@ renderer.setAnimationLoop((ms) => {
   pumpkin.update(dt)
   frameTall(dt)
   seeds.update(dt)
-  surprises.update(t, dt, mood)
+  surprises.update(t, dt)
   updateWorld(t, mood, dt, pumpkin.top())
   ink.update(t, mood)
   render()

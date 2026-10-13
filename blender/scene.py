@@ -846,13 +846,11 @@ for ob in list(house.children_recursive):
         world_uv(ob)
 
 
-# ---------------------------------------------------------------- gato (o site anima as peças)
+# ---------------------------------------------------------------- acessórios da abóbora
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cat import build_cat  # noqa: E402
 from accessories import build_accessories  # noqa: E402
 
-build_cat(col, V(0, 0, 2.0))
 build_accessories(col, pumpkin)
 
 

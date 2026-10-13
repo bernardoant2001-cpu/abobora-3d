@@ -253,28 +253,7 @@ export const audio = {
       o.stop(t + 0.16)
     }
   },
-  /** miado curto do gato */
-  meow() {
-    if (!ready()) return
-    const c = ctx!
-    const t = c.currentTime
-    const o = c.createOscillator()
-    o.type = 'sawtooth'
-    o.frequency.setValueAtTime(520, t)
-    o.frequency.linearRampToValueAtTime(820, t + 0.18)
-    o.frequency.exponentialRampToValueAtTime(430, t + 0.6)
-    const f = c.createBiquadFilter()
-    f.type = 'bandpass'
-    f.Q.value = 4
-    f.frequency.setValueAtTime(900, t)
-    f.frequency.linearRampToValueAtTime(1600, t + 0.2)
-    f.frequency.linearRampToValueAtTime(800, t + 0.6)
-    const g = c.createGain()
-    envelope(g.gain, t, 0.12, 0.05, 0.55)
-    o.connect(f).connect(g).connect(master)
-    o.start(t)
-    o.stop(t + 0.7)
-  },
+
 }
 
 function thump(t: number, from: number, len: number, to = 60, attack = 0.005) {

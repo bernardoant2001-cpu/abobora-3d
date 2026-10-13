@@ -36,7 +36,7 @@ npm run dev
 
 ## Editando a cena no Blender
 
-A cena inteira (sala, abóbora e seus formatos, gato, acessórios) é gerada pelos scripts em [`blender/`](blender/). Para regerar o modelo do site:
+A cena inteira (sala, abóbora e seus formatos, acessórios) é gerada pelos scripts em [`blender/`](blender/). Para regerar o modelo do site:
 
 ```bash
 blender -b --factory-startup --python blender/scene.py

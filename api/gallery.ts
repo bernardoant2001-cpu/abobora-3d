@@ -103,7 +103,7 @@ const json = (data: unknown, status = 200, headers: Record<string, string> = {})
 
 export async function GET() {
   const entries = await readEntries('approved/')
-  return json(entries, 200, { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120' })
+  return json(entries, 200, { 'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=30' })
 }
 
 export async function POST(request: Request) {

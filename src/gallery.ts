@@ -84,6 +84,8 @@ export function createGallery(o: Options) {
     img.src = e.thumb
     img.alt = `Abóbora esculpida por ${e.name}`
     img.loading = 'lazy'
+    // obra apagada há pouco (a lista pública fica alguns segundos em cache): some em vez de mostrar moldura vazia
+    img.onerror = () => b.remove()
     img.width = 240
     img.height = 300
     const plate = document.createElement('span')

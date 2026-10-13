@@ -120,7 +120,7 @@ def _tube(name, pts, radius, material, col, parent, segs=10):
 
 
 def witch_hat(col, parent, hat, band, brass):
-    root = _empty('AccWitch', (0.0, 0.97, 0.02), (0.1, 0.0, 0.08), col, parent)
+    root = _empty('AccWitch', (0.0, 0.035, 0.0), (0.0, 0.07, 0.15), col, parent)
     brim = [(0.34, 0.0), (0.7, -0.012), (0.99, -0.03), (1.02, -0.01), (0.99, 0.012), (0.7, 0.02), (0.34, 0.035)]
     _obj('WitchBrim', _sweep(brim, 64, True, lambda x, y, z, a, r, h: (x, y + 0.05 * math.sin(2 * a + 0.6) * (r / 1.0) ** 2, z)),
          hat, col, root)
@@ -142,7 +142,7 @@ def witch_hat(col, parent, hat, band, brass):
 
 
 def top_hat(col, parent, hat, band):
-    root = _empty('AccTopHat', (0.0, 0.96, 0.0), (0.06, 0.0, -0.1), col, parent)
+    root = _empty('AccTopHat', (0.0, 0.02, 0.0), (0.0, -0.05, -0.2), col, parent)
     brim = [(0.34, 0.0), (0.55, -0.005), (0.64, 0.01), (0.65, 0.03), (0.6, 0.035), (0.34, 0.035)]
 
     def curl(x, y, z, a, r, h):

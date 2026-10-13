@@ -555,13 +555,19 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
     if (o) crown.add(o)
   }
   const accessories = new Map<string, THREE.Object3D>()
+  // chapéus: raio da copa onde a aba encosta na casca (mesmas medidas de blender/accessories.py)
+  const HAT_RADIUS: Record<string, number> = { AccWitch: 0.44, AccTopHat: 0.38 }
+  const hats: { o: THREE.Object3D; radius: number; baseY: number; seats: number[] }[] = []
   for (const name of ['AccWitch', 'AccTopHat', 'AccBow', 'AccHorns']) {
     const o = outer.getObjectByName(name)
     if (!o) continue
     o.visible = false
     o.traverse((c) => (c.castShadow = true))
-    crown.add(o)
     accessories.set(name, o)
+    if (HAT_RADIUS[name]) {
+      lid.add(o)
+      hats.push({ o, radius: HAT_RADIUS[name], baseY: o.position.y, seats: [] })
+    } else crown.add(o)
   }
   const decor = ['PumpkinVine', 'PumpkinLeaf'].map((n) => crown.getObjectByName(n)).filter(Boolean) as THREE.Object3D[]
 
@@ -586,6 +592,19 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
     edge: ring.reduce((s, i) => s + m.getY(i), 0) / ring.length,
     width: ring.reduce((s, i) => s + radiusOf(i, m), 0) / ring.length / baseRing,
   }))
+  // assento de cada chapéu em cada formato: ponto mais alto da casca sob a copa (já na escala do formato)
+  const widths = [1, ...shapeInfo.map((i) => i.width)]
+  for (const hat of hats) {
+    hat.seats = [null, ...morphs].map((m, k) => {
+      const r = hat.radius * widths[k]
+      let top = -Infinity
+      for (let i = 0; i < pos.count; i++) {
+        const rho = radiusOf(i, m ?? undefined)
+        if (rho > r - 0.06 && rho < r + 0.02) top = Math.max(top, pos.getY(i) + (m?.getY(i) ?? 0))
+      }
+      return top
+    })
+  }
   // caixas por formato (base + cada morph) para as sementes não entrarem na abóbora
   const boxes = [null, ...morphs].map((m) => {
     const b = new THREE.Box3()
@@ -675,9 +694,25 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
       const ease = 1 - Math.exp(-dt * 7)
       weights.forEach((w, k) => (weights[k] = w + (targets[k] - w) * ease))
       for (const m of morphed) if (m.morphTargetInfluences) weights.forEach((w, k) => (m.morphTargetInfluences![k] = w))
+      let popScale = 1
+      if (pop) {
+        pop.t += dt
+        const t = Math.min(1, pop.t / 0.45)
+        popScale = 1 + Math.sin(t * Math.PI) * 0.25 * (1 - t) + (t < 0.2 ? t / 0.2 - 1 : 0)
+        if (!hats.some((h) => h.o === pop!.o)) pop.o.scale.setScalar(popScale)
+        if (t >= 1) {
+          if (!hats.some((h) => h.o === pop!.o)) pop.o.scale.setScalar(1)
+          pop = null
+          popScale = 1
+        }
+      }
       crown.position.y = mix((s) => s.lift)
       const width = 1 + mix((s) => s.width - 1)
       crown.scale.set(width, 1, width)
+      for (const hat of hats) {
+        hat.o.position.y = hat.baseY + hat.seats[0] + weights.reduce((acc, w, k) => acc + w * (hat.seats[k + 1] - hat.seats[0]), 0)
+        hat.o.scale.setScalar(width * (pop?.o === hat.o ? popScale : 1))
+      }
       if (squish >= 0) {
         squish += dt
         const k = Math.max(0, 1 - squish / 0.7)
@@ -686,15 +721,6 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         if (squish > 0.7) {
           squish = -1
           outer.scale.set(1, 1, 1)
-        }
-      }
-      if (pop) {
-        pop.t += dt
-        const t = Math.min(1, pop.t / 0.45)
-        pop.o.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.25 * (1 - t) + (t < 0.2 ? t / 0.2 - 1 : 0))
-        if (t >= 1) {
-          pop.o.scale.setScalar(1)
-          pop = null
         }
       }
 

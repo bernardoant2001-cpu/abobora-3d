@@ -8,6 +8,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { Carver, createCarvedPumpkin, RADIUS, type Brush } from './pumpkin'
+import { Painter, type Ink } from './paint'
 import { createWorld, FX } from './world'
 import { createInk } from './ink'
 import { createSeeds } from './seeds'
@@ -16,6 +17,10 @@ import { flicker } from './flame'
 import { audio } from './audio'
 import { STENCILS, thumbnail } from './stencils'
 import { createGallery } from './gallery'
+import { inject } from '@vercel/analytics'
+
+// visitas (sem cookies), para ver de onde o pessoal chega
+inject()
 import { SHAPES, shapeIcon, type Shape } from './shapes'
 
 const $ = <T extends HTMLElement>(s: string) => document.querySelector<T>(s)!
@@ -93,7 +98,9 @@ const carver = new Carver()
 carver.texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
 const glow = { value: 1 }
 const updateWorld = createWorld(scene, gltf.scene)
-const pumpkin = createCarvedPumpkin(adoptPumpkin(gltf.scene.getObjectByName('Pumpkin')!), carver, glow)
+const painter = new Painter()
+const nightGlow = { value: 0 }
+const pumpkin = createCarvedPumpkin(adoptPumpkin(gltf.scene.getObjectByName('Pumpkin')!), carver, glow, painter.texture, nightGlow)
 const surprises = createSurprises(scene)
 
 let lastTick = 0
@@ -115,10 +122,35 @@ composer.addPass(new OutputPass())
 const ink = createInk(renderer, scene, camera)
 composer.addPass(ink.pass)
 
+let frameNo = 0
 function render() {
   ink.renderNormals()
-  renderer.shadowMap.needsUpdate = true
+  // no modo leve as sombras só são refeitas quadro sim, quadro não
+  renderer.shadowMap.needsUpdate = quality.level < 2 || frameNo++ % 2 === 0
   composer.render()
+}
+
+// ---------- modo leve: se o aparelho não aguenta, a qualidade baixa sozinha ----------
+
+const quality = { level: 0, acc: 0, frames: 0, wait: 4 }
+function adaptQuality(dt: number) {
+  if (!document.body.classList.contains('ready') || recording || document.hidden) return
+  quality.wait -= dt
+  if (quality.wait > 0) return
+  quality.acc += dt
+  quality.frames++
+  if (quality.acc < 2) return
+  const fps = quality.frames / quality.acc
+  quality.acc = quality.frames = 0
+  // ponytail: só desce de nível; voltar a subir exigiria medir com folga para não ficar oscilando
+  if (fps >= 42 || quality.level >= 3) return
+  quality.level++
+  quality.wait = 2
+  if (quality.level >= 2) bloom.enabled = false
+  const pr = [0, Math.min(devicePixelRatio, 1.25), 1, 0.8][quality.level]
+  renderer.setPixelRatio(pr)
+  composer.setPixelRatio(pr)
+  resize()
 }
 
 const controls = new OrbitControls(camera, canvas)
@@ -139,8 +171,16 @@ cursor.visible = false
 cursor.layers.set(FX)
 scene.add(cursor)
 
-type Tool = 'carve' | 'cut' | 'shape' | 'shave' | 'restore'
-const CURSOR_COLOR: Record<Tool, string> = { carve: '#f4e9ff', cut: '#f4e9ff', shape: '#f4e9ff', shave: '#ffd27a', restore: '#9dffb0' }
+type Tool = 'carve' | 'cut' | 'shape' | 'paint' | 'shave' | 'restore'
+const CURSOR_COLOR: Record<Tool, string> = {
+  carve: '#f4e9ff',
+  cut: '#f4e9ff',
+  shape: '#f4e9ff',
+  paint: '#ffe08a',
+  shave: '#ffd27a',
+  restore: '#9dffb0',
+}
+let paintInk: Ink = 'ink'
 // formas prontas: encosta no centro e arrasta; a distância é o tamanho e a direção aponta o topo da forma
 let shape: Shape = SHAPES[0]
 let shapeMode: 'carve' | 'shave' = 'carve'
@@ -219,16 +259,20 @@ function finishShape(apply: boolean) {
 /** pinta com a ferramenta atual; devolve quanto o cursor andou (para o som e as sementes) */
 function brush(hit: THREE.Intersection | undefined, e: { clientX: number; clientY: number }) {
   if (!hit?.uv) {
-    carver.lift()
+    layer().lift()
     lastBrush = null
     return 0
   }
-  carver.paint(hit.uv, size, tool as Brush)
+  if (tool === 'paint') painter.paint(hit.uv, size, paintInk)
+  else carver.paint(hit.uv, size, tool as Brush)
   const moved = lastBrush ? Math.hypot(e.clientX - lastBrush.x, e.clientY - lastBrush.y) : 0
   lastBrush = { x: e.clientX, y: e.clientY }
   if (tool === 'carve' && lastHit && Math.random() < Math.min(0.95, 0.25 + moved / 25)) seeds.spawn(lastHit.point, lastHit.normal, 2)
   return moved
 }
+
+/** camada que o traço atual mexe: a pintura ou a escultura */
+const layer = (): Carver | Painter => (tool === 'paint' ? painter : carver)
 
 /** arrastar para cima/baixo inclina a câmera em volta da abóbora */
 function tilt(d: number) {
@@ -240,7 +284,7 @@ function tilt(d: number) {
 
 function stopGesture() {
   if (carving !== null) {
-    carver.end()
+    layer().end()
     audio.stopScrape()
   }
   finishShape(false)
@@ -254,7 +298,7 @@ addEventListener('keydown', () => audio.start(), { capture: true })
 canvas.addEventListener('pointerdown', (e) => {
   active.add(e.pointerId)
   if (active.size > 1) return stopGesture() // pinça: o OrbitControls cuida do zoom
-  if (e.button !== 0) return
+  if (e.button !== 0 || recording) return
   canvas.setPointerCapture(e.pointerId)
   intro = 1
   // visitando a abóbora de alguém: só dá para girar, não esculpir
@@ -267,7 +311,7 @@ canvas.addEventListener('pointerdown', (e) => {
   } else if (hit) {
     carving = e.pointerId
     lastBrush = null
-    carver.begin()
+    layer().begin()
     brush(hit, e)
     showCursor(hit, e)
     dismissHint()
@@ -305,7 +349,7 @@ const release = (e: PointerEvent) => {
   if (e.pointerId === carving) {
     if (pointer) brush(pick(pointer), pointer)
     pointer = null
-    carver.end()
+    layer().end()
     carving = null
     audio.stopScrape()
     if (tool === 'carve') scheduleLaugh()
@@ -418,9 +462,19 @@ function setTool(t: Tool) {
   ;(cursor.material as THREE.MeshBasicMaterial).color.set(CURSOR_COLOR[t])
   updateCutbar()
   shapebar.hidden = t !== 'shape'
-  if (t === 'shape') hint.hidden = true
+  paintbar.hidden = t !== 'paint'
+  if (t === 'shape' || t === 'paint') hint.hidden = true
 }
 toolButtons.forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool as Tool)))
+
+const paintbar = $('#paintbar')
+const inkButtons = document.querySelectorAll<HTMLButtonElement>('[data-ink]')
+inkButtons.forEach((b) =>
+  b.addEventListener('click', () => {
+    paintInk = b.dataset.ink as Ink
+    inkButtons.forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+  }),
+)
 
 const sizeInput = $<HTMLInputElement>('#size')
 const syncSize = () => {
@@ -432,12 +486,14 @@ syncSize()
 
 const undo = () => {
   if (carver.points) carver.removePoint()
+  else if (painter.lastStep > carver.lastStep) painter.undo()
   else carver.undo()
   updateCutbar()
 }
 $('#undo').addEventListener('click', undo)
 $('#clear').addEventListener('click', () => {
   carver.clear()
+  painter.clear()
   seeds.clear()
   laughFrac = 0
   updateCutbar()
@@ -599,12 +655,8 @@ $('#photo').addEventListener('click', () => {
 
 // ---------- exposição ----------
 
-/** miniatura 4:5 enquadrada na abóbora (com chapéu), em JPEG */
-function captureThumb() {
-  const wasVisible = cursor.visible
-  cursor.visible = false
-  render()
-  cursor.visible = wasVisible
+/** recorte 4:5 da tela enquadrando a abóbora (com chapéu) */
+function pumpkinFrame(margin = 1.35) {
   const c = pumpkin.collider({ center: new THREE.Vector3(), radius: 0, height: 0 })
   const top = new THREE.Vector3(c.center.x, Math.max(pumpkin.top(), c.center.y + c.height), c.center.z).project(camera)
   const bottom = new THREE.Vector3(c.center.x, c.center.y - c.height, c.center.z).project(camera)
@@ -612,11 +664,21 @@ function captureThumb() {
   const H = canvas.height
   const y0 = ((1 - top.y) / 2) * H
   const y1 = ((1 - bottom.y) / 2) * H
-  const h = Math.min(H, (y1 - y0) * 1.35)
+  const h = Math.min(H, (y1 - y0) * margin)
   const w = Math.min(W, h * 0.8)
   const cx = ((c.center.clone().project(camera).x + 1) / 2) * W
   const sx = THREE.MathUtils.clamp(cx - w / 2, 0, W - w)
   const sy = THREE.MathUtils.clamp((y0 + y1) / 2 - h / 2, 0, H - h)
+  return { sx, sy, w, h }
+}
+
+/** miniatura 4:5 enquadrada na abóbora (com chapéu), em JPEG */
+function captureThumb() {
+  const wasVisible = cursor.visible
+  cursor.visible = false
+  render()
+  cursor.visible = wasVisible
+  const { sx, sy, w, h } = pumpkinFrame()
   const out = document.createElement('canvas')
   out.width = 480
   out.height = 600
@@ -624,16 +686,18 @@ function captureThumb() {
   return out.toDataURL('image/jpeg', 0.82)
 }
 
-let mine: { mask: HTMLCanvasElement; shape: string; accessory: string | null } | null = null
+let mine: { mask: HTMLCanvasElement; paint: ReturnType<Painter['save']>; shape: string; accessory: string | null } | null = null
 const gallery = createGallery({
   capture: captureThumb,
   exportMask: () => carver.exportMask(),
+  exportPaint: () => painter.export(),
   current: () => ({ ...look }),
-  hasCarving: () => carver.carvedFraction() > 0.002,
-  view(entry, mask) {
-    if (!mine) mine = { mask: carver.saveState(), shape: look.shape, accessory: look.accessory }
-    if (tool === 'cut') setTool('carve')
+  hasCarving: () => carver.carvedFraction() > 0.002 || painter.hasPaint,
+  view(entry, mask, paint) {
+    if (!mine) mine = { mask: carver.saveState(), paint: painter.save(), shape: look.shape, accessory: look.accessory }
+    if (tool === 'cut' || tool === 'shape' || tool === 'paint') setTool('carve')
     carver.restoreState(mask)
+    painter.restore(paint ? { canvas: paint, used: true } : null)
     applyLook(entry.shape, entry.accessory)
     spinVel = 0
     pumpkin.outer.rotation.y = 0
@@ -642,10 +706,90 @@ const gallery = createGallery({
   back() {
     if (!mine) return
     carver.restoreState(mine.mask)
+    painter.restore(mine.paint)
     applyLook(mine.shape, mine.accessory)
     mine = null
   },
 })
+
+// link próprio de uma obra da exposição: /a/<id>
+const linked = location.pathname.match(/^\/a\/([a-f0-9]{20})\/?$/)
+if (linked) gallery.openLink(linked[1])
+
+// ---------- vídeo da abóbora girando ----------
+
+let recording = false
+let recState: { t: number; from: number; ctx: CanvasRenderingContext2D; crop: ReturnType<typeof pumpkinFrame> } | null = null
+const REC_SECONDS = 4.5
+
+async function recordSpin() {
+  const types = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm']
+  const mime = 'MediaRecorder' in window ? types.find((t) => MediaRecorder.isTypeSupported(t)) : undefined
+  if (recording || !mime) {
+    if (!mime) alert('Seu navegador não consegue gravar vídeo. Use o botão de foto!')
+    return
+  }
+  const out = document.createElement('canvas')
+  out.width = 720
+  out.height = 900
+  const ctx = out.getContext('2d')!
+  const chunks: Blob[] = []
+  const rec = new MediaRecorder(out.captureStream(30), { mimeType: mime, videoBitsPerSecond: 6_000_000 })
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data)
+  const done = new Promise<void>((r) => (rec.onstop = () => r()))
+  recording = true
+  document.body.classList.add('is-recording')
+  $('#recording').hidden = false
+  cursor.visible = false
+  spinVel = 0
+  recState = { t: 0, from: pumpkin.outer.rotation.y, ctx, crop: pumpkinFrame(2) }
+  rec.start()
+  await new Promise((r) => setTimeout(r, REC_SECONDS * 1000))
+  rec.stop()
+  await done
+  recState = null
+  recording = false
+  document.body.classList.remove('is-recording')
+  $('#recording').hidden = true
+
+  const ext = mime.includes('mp4') ? 'mp4' : 'webm'
+  const file = new File(chunks, `minha-abobora.${ext}`, { type: mime.split(';')[0] })
+  if (touch && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Minha abóbora' })
+      return
+    } catch {
+      /* cancelou: baixa o arquivo */
+    }
+  }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(file)
+  a.download = file.name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000)
+}
+$('#record').addEventListener('click', recordSpin)
+
+/** chamado a cada quadro durante a gravação: gira a abóbora e copia o recorte para o vídeo */
+function recordFrame(dt: number) {
+  if (!recState) return
+  recState.t = Math.min(REC_SECONDS, recState.t + dt)
+  const k = recState.t / REC_SECONDS
+  pumpkin.outer.rotation.y = recState.from + (k < 0.5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2) * Math.PI * 2
+}
+
+function recordCopy() {
+  if (!recState) return
+  const { ctx, crop } = recState
+  ctx.drawImage(canvas, crop.sx, crop.sy, crop.w, crop.h, 0, 0, 720, 900)
+  ctx.font = '26px "Special Elite", monospace'
+  ctx.textAlign = 'center'
+  ctx.fillStyle = 'rgba(255, 243, 209, 0.9)'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+  ctx.shadowBlur = 6
+  ctx.fillText('abobora-3d.vercel.app', 360, 870)
+  ctx.shadowBlur = 0
+}
 
 // ---------- loop ----------
 
@@ -729,6 +873,11 @@ renderer.setAnimationLoop((ms) => {
     carver.guideTexture.needsUpdate = true
     carver.guideDirty = false
   }
+  painter.update(dt)
+  if (painter.dirty) {
+    painter.texture.needsUpdate = true
+    painter.dirty = false
+  }
 
   // risada: confere se o rosto mudou bastante desde a última vez
   if (laughCheck && t > laughCheck && carving === null) {
@@ -778,7 +927,11 @@ renderer.setAnimationLoop((ms) => {
   surprises.update(t, dt)
   updateWorld(t, mood, dt, pumpkin.top())
   ink.update(t, mood)
+  nightGlow.value = mood
+  recordFrame(dt)
   render()
+  recordCopy()
+  adaptQuality(dt)
 })
 
 // tinta cheia → o rosto acende → íris abre a cena (com um tempo mínimo para a abertura ser vista)

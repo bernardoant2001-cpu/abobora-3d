@@ -10,6 +10,7 @@
     "model": "blender -b --factory-startup --python blender/scene.py && node scripts/compress-model.mjs"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.8.1",
     "three": "^0.186.1"
   },

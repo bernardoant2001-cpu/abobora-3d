@@ -9,6 +9,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 - **Faca**: esculpe à mão livre, com tamanho de lâmina ajustável — sementes e polpa saltam na mesa
 - **Recorte**: marque os cantos e corte com bordas retas (ótimo para dentes e triângulos)
 - **Formas**: círculo, triângulo, losango, estrela, coração, lua, raio e morcego, para recortar ou raspar; arraste para escolher o tamanho e o giro
+- **Pintar**: tinta preta que escorre pela casca, tinta creme e tinta que brilha no escuro, além da borracha
 - **Raspar**: tira só a casca, sem furar; a parte raspada brilha fraquinho com a vela
 - **Remendo**: devolve a casca onde você cortou demais
 - **Tampa**: corte e levante a tampa da abóbora
@@ -18,9 +19,10 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 - Apagar as luzes para ver só a vela brilhando pelos cortes
 - Sons sintetizados no navegador (vento, lareira, faca, coruja), com botão de mudo
 - **Exposição**: envie sua abóbora com seu nome (sem precisar de conta) e veja as dos outros em 3D na mesa; tudo passa por aprovação antes de aparecer
+- Cada obra aprovada ganha um link próprio para compartilhar, com prévia da abóbora, e pode receber curtidas
 - Algumas surpresas escondidas pela casa 👀
-- Salvar foto em PNG
-- Funciona no celular
+- Salvar foto em PNG ou gravar um vídeo curto da abóbora girando
+- Funciona no celular, com qualidade que se ajusta sozinha em aparelhos mais fracos
 
 ## Tecnologias
 

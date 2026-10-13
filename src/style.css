@@ -1144,3 +1144,210 @@ body.is-viewing .hint {
   .shapebar, .hint, .stencils, .costume, .cutbar { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 68px); }
   .shape-text { display: none; }
 }
+
+/* ---------- exposição: cartões com curtida, ordenação e link próprio ---------- */
+
+.frame-card {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.frame-card figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.frame-card .plate {
+  min-width: 0;
+}
+
+.frame:nth-child(3n + 1),
+.frame:nth-child(3n + 2) {
+  transform: none;
+}
+
+.frame-card:nth-child(3n + 1) .frame { transform: rotate(-1.2deg); }
+.frame-card:nth-child(3n + 2) .frame { transform: rotate(0.8deg); }
+.frame-card .frame:hover,
+.frame-card .frame:focus-visible { transform: rotate(0deg) translateY(-4px) scale(1.03); }
+
+.like {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: rgba(255, 243, 209, 0.7);
+  color: var(--ink);
+  font-size: 13px;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.like svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
+
+.like[aria-pressed='true'] {
+  background: var(--ink);
+  color: #ff9a3c;
+}
+
+.like[aria-pressed='true'] svg {
+  fill: currentColor;
+}
+
+.like:active {
+  transform: scale(0.9);
+}
+
+.expo-sort {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  border: 2px dashed rgba(26, 15, 6, 0.35);
+}
+
+.expo-sort button {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+.expo-sort button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.ghost {
+  height: 34px;
+  padding: 0 12px;
+  border: 2px solid var(--ink);
+  border-radius: 10px 13px 9px 12px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.viewing .ghost {
+  height: 34px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.viewing .like {
+  height: 34px;
+}
+
+.expo-mylink {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.expo-mylink[hidden],
+.recording[hidden],
+#paintbar[hidden] {
+  display: none;
+}
+
+.expo-mylink strong {
+  font-weight: 400;
+  word-break: break-all;
+}
+
+/* ---------- pintura ---------- */
+
+.paint-list button {
+  width: auto !important;
+  padding: 0 10px !important;
+  gap: 6px;
+  display: inline-flex !important;
+  align-items: center;
+  font-size: 13px;
+}
+
+.paint-list i {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  flex: none;
+}
+
+.glow-swatch {
+  background: radial-gradient(circle, #f4ffd0, #a8ff7a 60%, #3c6a1c);
+  box-shadow: 0 0 8px #b8ff8a;
+}
+
+.erase-swatch {
+  background: repeating-linear-gradient(45deg, #fff3d1 0 3px, #d8b874 3px 6px);
+}
+
+/* ---------- gravação ---------- */
+
+.recording {
+  position: fixed;
+  top: max(84px, calc(env(safe-area-inset-top) + 72px));
+  right: max(20px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  z-index: 6;
+}
+
+.rec-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #c0262e;
+  animation: rec 1s steps(2) infinite;
+}
+
+@keyframes rec {
+  50% { opacity: 0.2; }
+}
+
+body.is-recording .toolbar,
+body.is-recording .hint,
+body.is-recording .shapebar,
+body.is-recording .cutbar {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .expo-actions { flex-wrap: wrap; gap: 6px; }
+  .expo-sort { order: 3; flex-basis: 100%; justify-content: center; }
+  .viewing { flex-wrap: wrap; justify-content: center; white-space: normal; width: calc(100% - 24px); gap: 8px; padding: 8px; }
+  .viewing > span { flex-basis: 100%; text-align: center; }
+  .paint-list button { font-size: 12px; padding: 0 7px !important; }
+  .recording { top: auto; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 160px); right: 50%; transform: translateX(50%); }
+}
+
+/* celulares estreitos: seis botões no canto não podem encostar no título */
+@media (max-width: 400px) {
+  .round { width: 34px; height: 34px; }
+  .round svg { width: 17px; height: 17px; }
+  .corner { gap: 4px; right: 10px; }
+  .brand { left: 14px; }
+  .brand h1 { font-size: 26px; }
+  .credit { font-size: 11px; }
+}

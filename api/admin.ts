@@ -29,8 +29,8 @@ async function find(prefix: string, id: string) {
 }
 
 async function removeAll(entryBlobUrl: string, id: string) {
-  const { blobs } = await list({ prefix: `media/${id}-`, limit: 10 })
-  await del([entryBlobUrl, ...blobs.map((b) => b.url)])
+  const [media, likes] = await Promise.all([list({ prefix: `media/${id}-`, limit: 10 }), list({ prefix: `likes/${id}/`, limit: 1000 })])
+  await del([entryBlobUrl, ...media.blobs.map((b) => b.url), ...likes.blobs.map((b) => b.url)])
 }
 
 export async function GET(request: Request) {

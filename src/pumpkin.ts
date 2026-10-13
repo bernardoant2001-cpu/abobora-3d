@@ -39,7 +39,7 @@ export class Carver {
   private gctx: CanvasRenderingContext2D
   private snap = document.createElement('canvas')
   private snapCtx: CanvasRenderingContext2D
-  private history: { x: number; y: number; data: ImageData }[] = []
+  private history: { t: number; x: number; y: number; data: ImageData }[] = []
   private box = [Infinity, Infinity, -Infinity, -Infinity]
   private last: P | null = null
   private poly: P[] = []
@@ -98,8 +98,13 @@ export class Carver {
     const w = Math.min(MASK_W, Math.ceil(this.box[2])) - x
     const h = Math.min(MASK_H, Math.ceil(this.box[3])) - y
     if (w <= 0 || h <= 0) return
-    this.history.push({ x, y, data: this.snapCtx.getImageData(x, y, w, h) })
+    this.history.push({ t: nextStep(), x, y, data: this.snapCtx.getImageData(x, y, w, h) })
     if (this.history.length > 40) this.history.shift()
+  }
+
+  /** momento da última ação desfazível (para o Desfazer escolher entre corte e pintura) */
+  get lastStep() {
+    return this.history.at(-1)?.t ?? 0
   }
 
   /** interrompe a interpolação quando o traço sai da abóbora */
@@ -385,8 +390,12 @@ export class Carver {
   }
 }
 
+// contador compartilhado entre escultura e pintura, para desfazer na ordem certa
+let steps = 0
+export const nextStep = () => ++steps
+
 /** pixels da máscara por unidade de superfície, na latitude dada pelo v */
-function scale(v: number): P {
+export function scale(v: number): P {
   const theta = (1 - v) * Math.PI
   const s = Math.sin(theta)
   const c = Math.cos(theta)
@@ -462,7 +471,13 @@ function lidGeometry(geo: THREE.BufferGeometry) {
 }
 
 /** transforma a abóbora modelada no Blender numa lanterna esculpível */
-export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { value: number }) {
+export function createCarvedPumpkin(
+  outer: THREE.Mesh,
+  carver: Carver,
+  glow: { value: number },
+  paint: THREE.Texture,
+  dark: { value: number },
+) {
   const lidOpen = { value: 0 }
   const skin = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -475,10 +490,12 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
     shader.uniforms.uLid = lidOpen
     shader.uniforms.uGuide = { value: carver.guideTexture }
     shader.uniforms.uWall = { value: (1 - WALL) * RADIUS * 0.9 }
+    shader.uniforms.uPaint = { value: paint }
+    shader.uniforms.uDark = dark
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
-        `#include <common>\nuniform float uGlow;\nuniform float uWall;\nuniform sampler2D uGuide;\n${LID_GLSL}`,
+        `#include <common>\nuniform float uGlow;\nuniform float uWall;\nuniform float uDark;\nuniform sampler2D uGuide;\nuniform sampler2D uPaint;\n${LID_GLSL}`,
       )
       .replace(
         '#include <alphamap_pars_fragment>',
@@ -542,6 +559,12 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         diffuseColor.rgb = mix( diffuseColor.rgb, ${FLESH_SKIN}, rim );
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.95, 0.6, 0.28 ), shave * 0.8 );
         diffuseColor.rgb *= 1.0 - shaveLine * 0.35;
+        // pintura por cima da casca; a tinta que brilha no escuro é a de verde bem maior que azul
+        vec4 pt = texture2D( uPaint, vAlphaMapUv );
+        float paintA = pt.a * skinSide * ( 1.0 - rim );
+        float paintGlow = smoothstep( 0.45, 0.65, pt.g - pt.b ) * paintA;
+        diffuseColor.rgb = mix( diffuseColor.rgb, pt.rgb, paintA );
+        shave *= 1.0 - paintA;
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.01, 0.006, 0.002 ), ink );
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.95, 0.8 ), guide );
         diffuseColor.rgb = mix( diffuseColor.rgb, wallColor * 0.65, wallHit );`,
@@ -551,7 +574,8 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         `#include <emissivemap_fragment>
         totalEmissiveRadiance += vec3( 0.9, 0.5, 0.14 ) * rim * ( 1.0 - ink ) * uGlow * 0.7 + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;
         totalEmissiveRadiance += vec3( 0.85, 0.38, 0.08 ) * shave * uGlow * 0.3;
-        totalEmissiveRadiance += wallColor * wallHit * ( 0.2 + 0.35 * wallDepth ) * uGlow;`,
+        totalEmissiveRadiance += wallColor * wallHit * ( 0.2 + 0.35 * wallDepth ) * uGlow;
+        totalEmissiveRadiance += vec3( 0.75, 1.0, 0.45 ) * paintGlow * ( 0.08 + 1.4 * uDark );`,
       )
   }
 

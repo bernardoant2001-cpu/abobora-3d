@@ -839,6 +839,10 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
 
   // luminária pendente balançando sobre a mesa, com falhas de vez em quando
   const pivot = room.getObjectByName('LampPivot')!
+  // a luminária sobe quando a abóbora (com chapéu) fica alta demais e volta depois
+  const pivotY = pivot.position.y
+  const shadeBottom = new THREE.Box3().setFromObject(room.getObjectByName('LampShade')!).min.y
+  let lampLift = 0
   const bulbAt = room.getObjectByName('Lamp')!.position
   const spot = new THREE.SpotLight('#ffd89a', 38, 14, 0.78, 0.65, 2)
   spot.position.copy(bulbAt)
@@ -894,7 +898,9 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
   scene.add(fx(motes.points))
 
   const lerp = THREE.MathUtils.lerp
-  return (t: number, mood: number) => {
+  return (t: number, mood: number, dt: number, top: number) => {
+    lampLift += (Math.max(0, top + 0.3 - shadeBottom) - lampLift) * (1 - Math.exp(-dt * 3))
+    pivot.position.y = pivotY + lampLift
     hemi.intensity = lerp(0.32, 0.04, mood)
     fill.intensity = lerp(0.3, 0, mood)
     moonLight.intensity = lerp(1.6, 1.3, mood)

@@ -631,7 +631,7 @@ renderer.setAnimationLoop((ms) => {
   frameTall(dt)
   seeds.update(dt)
   surprises.update(t, dt, mood)
-  updateWorld(t, mood)
+  updateWorld(t, mood, dt, pumpkin.top())
   ink.update(t, mood)
   render()
 })

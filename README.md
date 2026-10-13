@@ -6,12 +6,16 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 
 ## Recursos
 
-- **Faca**: esculpe à mão livre, com tamanho de lâmina ajustável
+- **Faca**: esculpe à mão livre, com tamanho de lâmina ajustável — sementes e polpa saltam na mesa
 - **Recorte**: marque os cantos e corte com bordas retas (ótimo para dentes e triângulos)
+- **Raspar**: tira só a casca, sem furar; a parte raspada brilha fraquinho com a vela
 - **Remendo**: devolve a casca onde você cortou demais
+- **Tampa**: corte e levante a tampa da abóbora
 - Desfazer (`Ctrl+Z`), abóbora nova e modelos prontos: Clássica, Malvada, Fofinha e Vampiro
 - Arraste fora da abóbora para girá-la e inclinar a vista
 - Apagar as luzes para ver só a vela brilhando pelos cortes
+- Sons sintetizados no navegador (vento, lareira, faca, coruja), com botão de mudo
+- Algumas surpresas escondidas pela casa 👀
 - Salvar foto em PNG
 - Funciona no celular
 
@@ -19,6 +23,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 
 - [Three.js](https://threejs.org/) — renderização, sombras, bloom e um pós-processamento próprio de tinta (sépia, contornos por profundidade/normais, hachura e grão)
 - [Blender](https://www.blender.org/) — modelagem da sala, da mesa, da abóbora e dos objetos, exportada como GLB com compressão Draco
+- Web Audio API — todos os sons gerados em tempo real, sem arquivos de áudio
 - [Vite](https://vite.dev/) + TypeScript
 
 ## Rodando localmente

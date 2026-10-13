@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { createFlame, flicker } from './flame'
 
 /** camada de efeitos (céu, chamas, tinta, poeira) que fica fora da passada de contornos */
 export const FX = 1
@@ -671,38 +672,93 @@ function dress(root: THREE.Object3D) {
 
 // ---------------------------------------------------------------- fogo, velas, luminária, poeira
 
-const FIRE = new THREE.MeshBasicMaterial({
-  color: new THREE.Color(4, 1.6, 0.35),
-  transparent: true,
-  opacity: 0.85,
-  blending: THREE.AdditiveBlending,
-  depthWrite: false,
-})
+/** potes e poções: vidro translúcido com líquido brilhante pela metade, em vez de um bloco emissivo chapado */
+function bottles(root: THREE.Object3D) {
+  const glass = new THREE.MeshStandardMaterial({
+    color: '#e8f0ff',
+    roughness: 0.06,
+    transparent: true,
+    opacity: 0.24,
+    depthWrite: false,
+  })
+  // a borda do vidro pega a luz do líquido e desenha o pote mesmo no escuro
+  glass.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+      float edge = 1.0 - abs( dot( normal, normalize( vViewPosition ) ) );
+      totalEmissiveRadiance += vec3( 1.0, 0.85, 0.55 ) * pow( edge, 3.0 ) * 0.9;`,
+    )
+  }
+  // brilho mais forte no centro e mais fraco nas bordas: dá volume ao líquido
+  const rounded = (m: THREE.MeshStandardMaterial) => {
+    m.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        totalEmissiveRadiance *= 0.15 + 0.85 * pow( abs( dot( normal, normalize( vViewPosition ) ) ), 1.6 );`,
+      )
+    }
+    return m
+  }
+  const liquids: THREE.MeshStandardMaterial[] = []
+  const jars: THREE.Mesh[] = []
+  root.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.Material | undefined
+    if (m && (m.name === 'JarGlow' || m.name === 'Potion')) jars.push(o as THREE.Mesh)
+  })
+  for (const jar of jars) {
+    const potion = (jar.material as THREE.Material).name === 'Potion'
+    const liquid = rounded(
+      new THREE.MeshStandardMaterial({
+        color: potion ? '#16301c' : '#33240c',
+        emissive: potion ? '#7dff9a' : '#ffc95a',
+        emissiveIntensity: 1,
+        roughness: 0.3,
+      }),
+    )
+    liquids.push(liquid)
+    const fill = new THREE.Mesh(jar.geometry, liquid)
+    fill.scale.set(0.8, 0.6, 0.8)
+    fill.position.y = 0.012
+    jar.material = glass
+    jar.castShadow = false
+    jar.add(fill)
+  }
+  return (t: number) => liquids.forEach((l, i) => (l.emissiveIntensity = 0.55 + 0.35 * flicker(t * 0.35, 40 + i)))
+}
 
-function fireplace(at: THREE.Vector3) {
+function fireplace(at: THREE.Vector3, embers?: THREE.MeshStandardMaterial) {
   const group = new THREE.Group()
   group.position.copy(at)
-  const cone = new THREE.ConeGeometry(0.16, 0.6, 12, 1, true)
-  cone.translate(0, 0.3, 0)
-  const tongues = [-0.42, -0.22, 0, 0.2, 0.4].map((x, i) => {
-    const m = new THREE.Mesh(cone, FIRE)
-    m.position.set(x, -0.08, (i % 2) * 0.08 - 0.04)
-    group.add(m)
-    return m
+  const tongues = [
+    [-0.4, 0.42],
+    [-0.2, 0.62],
+    [0.0, 0.75],
+    [0.2, 0.6],
+    [0.4, 0.45],
+  ].map(([x, h], i) => {
+    const f = createFlame(20 + i, h, FX)
+    f.group.position.set(x, -0.12, (i % 2) * 0.08 - 0.04)
+    group.add(f.group)
+    return f
   })
-  fx(group)
-  const light = new THREE.PointLight('#ff7a2a', 12, 0, 2)
-  light.position.set(0, 0.4, 0.5)
+  const light = new THREE.PointLight('#ff7a2a', 14, 0, 2)
+  const home = new THREE.Vector3(0, 0.4, 0.5)
+  light.position.copy(home)
   group.add(light)
+  const warm = new THREE.Color('#ff6a1a')
+  const hot = new THREE.Color('#ffa850')
+  const emberBase = embers?.emissiveIntensity ?? 1
   return {
     group,
     update(t: number) {
-      tongues.forEach((m, i) => {
-        const k = 1.1 - Math.abs(m.position.x)
-        m.scale.set(0.7 + k * 0.4, (0.9 + 0.35 * Math.sin(t * (7 + i * 1.7) + i * 2)) * k, 0.7 + k * 0.4)
-        m.rotation.z = 0.12 * Math.sin(t * 5 + i)
-      })
-      light.intensity = 12 * (0.85 + 0.1 * Math.sin(t * 11) + 0.05 * Math.sin(t * 23))
+      const f = flicker(t, 3)
+      tongues.forEach((tg, i) => tg.update(t, 0.75 + 0.5 * flicker(t, 20 + i)))
+      light.intensity = 14 * f
+      light.color.copy(warm).lerp(hot, (f - 0.72) / 0.28)
+      light.position.set(home.x + (flicker(t * 1.3, 5) - 0.86) * 0.4, home.y + (flicker(t, 6) - 0.86) * 0.2, home.z)
+      if (embers) embers.emissiveIntensity = emberBase * (0.6 + 0.6 * flicker(t * 0.6, 9))
     },
   }
 }
@@ -756,19 +812,22 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
   scene.fog = new THREE.Fog('#2b1b33', 22, 110)
   scene.add(fx(horizon()), fx(moon()), fx(stars()), room)
   dress(room)
+  const updateBottles = bottles(room)
 
   const flock = bats(['BatsMoon', 'BatsTower'].map((n) => room.getObjectByName(n)!.position))
   scene.add(flock.group)
   const flickerWin = findMaterial(room, 'HouseWindowFlicker')
   const flickerBase = flickerWin?.emissiveIntensity ?? 1
 
-  const hemi = new THREE.HemisphereLight('#d9b27a', '#2a1808', 0.5)
-  const fill = new THREE.DirectionalLight('#ffd9a8', 0.35)
+  // pouca luz ambiente: a sala vive das poças de luz (lâmpada, velas, lareira, abóbora)
+  const hemi = new THREE.HemisphereLight('#d9b27a', '#2a1808', 0.32)
+  const fill = new THREE.DirectionalLight('#ffd9a8', 0.3)
   fill.position.set(3, 5, 8)
   const moonLight = new THREE.DirectionalLight('#c9d4ff', 1.6)
   moonLight.position.set(6, 9, -16)
   moonLight.castShadow = true
   moonLight.shadow.mapSize.set(2048, 2048)
+  moonLight.shadow.radius = 3
   const cam = moonLight.shadow.camera
   cam.left = cam.bottom = -8
   cam.right = cam.top = 8
@@ -778,14 +837,15 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
   moonLight.shadow.normalBias = 0.03
   scene.add(hemi, fill, moonLight)
 
-  // luminária pendente balançando sobre a mesa
+  // luminária pendente balançando sobre a mesa, com falhas de vez em quando
   const pivot = room.getObjectByName('LampPivot')!
   const bulbAt = room.getObjectByName('Lamp')!.position
-  const spot = new THREE.SpotLight('#ffd89a', 30, 14, 0.75, 0.55, 2)
+  const spot = new THREE.SpotLight('#ffd89a', 38, 14, 0.78, 0.65, 2)
   spot.position.copy(bulbAt)
   spot.target.position.set(bulbAt.x, bulbAt.y - 3, bulbAt.z)
   spot.castShadow = true
   spot.shadow.mapSize.set(1024, 1024)
+  spot.shadow.radius = 6
   spot.shadow.bias = -0.0006
   spot.shadow.normalBias = 0.02
   spot.shadow.camera.near = 0.1
@@ -794,30 +854,40 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
   const bulb = (room.getObjectByName('LampBulb') as THREE.Mesh).material as THREE.MeshStandardMaterial
   const bulbGlow = bulb.emissiveIntensity * 0.4
   pivot.traverse((o) => (o.castShadow = false))
+  let glitchAt = 9
+  const glitch = (t: number) => {
+    if (t > glitchAt + 0.7) glitchAt = t + 7 + Math.random() * 12
+    if (t < glitchAt) return 1
+    return Math.sin(t * 83) > 0.15 ? 1 : 0.12
+  }
 
-  const flames: THREE.Mesh[] = []
-  const flameGeo = new THREE.SphereGeometry(1, 12, 10)
-  const flameMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 2.4, 0.7) })
-  const tableFlames = new THREE.Vector3()
-  let tableCount = 0
+  // velas: cada chama com sua tremulação; uma luz para o grupo da mesa e outra para a lareira
+  const candles: { flame: ReturnType<typeof createFlame>; seed: number; group: string }[] = []
+  const centers: Record<string, THREE.Vector3> = { Table: new THREE.Vector3(), Mantel: new THREE.Vector3() }
+  const counts: Record<string, number> = { Table: 0, Mantel: 0 }
   room.updateMatrixWorld(true)
   room.traverse((o) => {
     if (!o.name.startsWith('Flame')) return
-    const f = fx(new THREE.Mesh(flameGeo, flameMat))
-    o.getWorldPosition(f.position)
-    f.scale.set(0.026, 0.058, 0.026)
-    flames.push(f)
-    if (o.name.includes('Table')) {
-      tableFlames.add(f.position)
-      tableCount++
-    }
+    const group = o.name.includes('Table') ? 'Table' : 'Mantel'
+    const seed = 60 + candles.length * 7
+    const flame = createFlame(seed, group === 'Table' ? 0.14 : 0.1, FX)
+    o.getWorldPosition(flame.group.position)
+    flame.group.position.y -= 0.04
+    scene.add(flame.group)
+    candles.push({ flame, seed, group })
+    centers[group].add(flame.group.position)
+    counts[group]++
   })
-  scene.add(...flames)
-  const candleLight = new THREE.PointLight('#ffae5c', 1.4, 6, 2)
-  candleLight.position.copy(tableFlames.divideScalar(Math.max(1, tableCount))).add(new THREE.Vector3(0, 0.2, 0.1))
-  scene.add(candleLight)
+  const candleLights = (['Table', 'Mantel'] as const).map((g, i) => {
+    const light = new THREE.PointLight('#ffae5c', g === 'Table' ? 1.8 : 0.9, g === 'Table' ? 6 : 4.5, 2)
+    const home = centers[g].divideScalar(Math.max(1, counts[g])).add(new THREE.Vector3(0, 0.18, 0.12))
+    light.position.copy(home)
+    scene.add(light)
+    return { light, home, base: light.intensity, seed: 80 + i }
+  })
+
   const fireNode = room.getObjectByName('Fire')
-  const hearth = fireNode ? fireplace(fireNode.getWorldPosition(new THREE.Vector3())) : null
+  const hearth = fireNode ? fireplace(fireNode.getWorldPosition(new THREE.Vector3()), findMaterial(room, 'Embers')) : null
   if (hearth) scene.add(hearth.group)
 
   const motes = dust()
@@ -825,21 +895,27 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
 
   const lerp = THREE.MathUtils.lerp
   return (t: number, mood: number) => {
-    hemi.intensity = lerp(0.5, 0.05, mood)
-    fill.intensity = lerp(0.35, 0, mood)
+    hemi.intensity = lerp(0.32, 0.04, mood)
+    fill.intensity = lerp(0.3, 0, mood)
     moonLight.intensity = lerp(1.6, 1.3, mood)
-    spot.intensity = lerp(30, 0, mood)
-    bulb.emissiveIntensity = bulbGlow * (1 - mood)
+    const lamp = glitch(t) * (1 - mood)
+    spot.intensity = 38 * lamp
+    bulb.emissiveIntensity = bulbGlow * lamp
     pivot.rotation.z = 0.045 * Math.sin(t * 0.8)
     pivot.rotation.x = 0.03 * Math.sin(t * 0.63 + 1.2)
     motes.update(t)
     flock.update(t)
+    updateBottles(t)
     if (flickerWin) {
       const k = 0.55 + 0.3 * Math.sin(t * 7.1) + 0.15 * Math.sin(t * 17.3)
       flickerWin.emissiveIntensity = flickerBase * (Math.sin(t * 0.4) > 0.93 ? 0.05 : k)
     }
     hearth?.update(t)
-    flames.forEach((f, i) => (f.scale.y = 0.058 * (0.85 + 0.15 * Math.sin(t * (11 + i * 3) + i))))
-    candleLight.intensity = 1.4 * (0.9 + 0.1 * Math.sin(t * 9.3))
+    for (const c of candles) c.flame.update(t, flicker(t, c.seed) * 1.1)
+    for (const c of candleLights) {
+      const f = flicker(t, c.seed)
+      c.light.intensity = c.base * f * (1 + mood * 0.4)
+      c.light.position.set(c.home.x + (flicker(t * 1.7, c.seed + 1) - 0.86) * 0.08, c.home.y, c.home.z)
+    }
   }
 }

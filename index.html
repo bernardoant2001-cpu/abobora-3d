@@ -25,6 +25,10 @@
     </header>
 
     <div class="corner">
+      <button id="sound" class="round paper" aria-pressed="false" title="Desligar o som" aria-label="Som">
+        <svg class="on" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" /><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" /></svg>
+        <svg class="off" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" /><path d="m16 9.5 5 5M21 9.5l-5 5" /></svg>
+      </button>
       <button id="lights" class="round paper" aria-pressed="false" title="Apagar as luzes" aria-label="Apagar as luzes">
         <svg viewBox="0 0 24 24"><path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z" /></svg>
       </button>
@@ -43,9 +47,34 @@
 
     <div id="stencils" class="stencils paper" hidden></div>
 
-    <div class="loader" aria-hidden="true">
-      <img src="/favicon.svg" alt="" width="72" height="72" />
-      <p>Acendendo a vela…</p>
+    <div class="loader" role="status" aria-live="polite">
+      <div class="reel">
+        <div class="leader" aria-hidden="true"></div>
+        <svg class="ink-pumpkin" viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <clipPath id="pumpkin-body">
+              <ellipse cx="38" cy="70" rx="26" ry="33" />
+              <ellipse cx="82" cy="70" rx="26" ry="33" />
+              <ellipse cx="60" cy="69" rx="27" ry="36" />
+            </clipPath>
+          </defs>
+          <g class="outline">
+            <ellipse cx="38" cy="70" rx="26" ry="33" />
+            <ellipse cx="82" cy="70" rx="26" ry="33" />
+            <ellipse cx="60" cy="69" rx="27" ry="36" />
+          </g>
+          <g clip-path="url(#pumpkin-body)">
+            <rect x="0" y="0" width="120" height="120" class="pumpkin-paper" />
+            <path class="groove" d="M45 37q-8 32 0 66M75 37q8 32 0 66" />
+            <g class="ink">
+              <path class="wave" d="M0 0 Q15 -6 30 0 T60 0 T90 0 T120 0 T150 0 T180 0 T210 0 T240 0 V140 H0 Z" />
+            </g>
+          </g>
+          <path class="stem" d="M56 35c0-9 3-16 10-20l5 5c-5 3-7 8-7 15z" />
+          <path class="face" d="M38 62l9-13 8 13zM65 62l8-13 9 13zM55 73l5-7 5 7zM34 82q26 18 52 0l-5 8-5-5-5 7-5-6-6 6-5-6-5 7-5-6-6 5z" />
+        </svg>
+      </div>
+      <p class="loader-text"><span id="load-msg">Acendendo a vela</span> <span id="load-pct">0%</span></p>
     </div>
 
     <nav class="toolbar paper" aria-label="Ferramentas">
@@ -57,6 +86,10 @@
         <button data-tool="cut" aria-pressed="false" title="Recorte reto">
           <svg viewBox="0 0 24 24"><path d="M5 18 9 5l10 4-4 10z" /><circle cx="5" cy="18" r="1.6" /><circle cx="9" cy="5" r="1.6" /><circle cx="19" cy="9" r="1.6" /><circle cx="15" cy="19" r="1.6" /></svg>
           <span>Recorte</span>
+        </button>
+        <button data-tool="shave" aria-pressed="false" title="Raspar a casca (sem furar)">
+          <svg viewBox="0 0 24 24"><path d="M4 20 13 11" /><path d="M13 11c1-3.5 3.6-6.2 7-7-.8 3.4-3.5 6-7 7z" /><path d="M7.5 16.5c-1.5.2-2.8-.4-3.5-1.5M11 13c-1.2.6-2.6.5-3.6-.3" /></svg>
+          <span>Raspar</span>
         </button>
         <button data-tool="restore" aria-pressed="false" title="Remendo">
           <svg viewBox="0 0 24 24"><rect x="2.5" y="8.5" width="19" height="7" rx="3.5" transform="rotate(-45 12 12)" /><path d="M10.5 10.5h.01M13.5 13.5h.01M13.5 10.5h.01M10.5 13.5h.01" /></svg>
@@ -74,6 +107,9 @@
         </button>
         <button id="clear" title="Abóbora nova" aria-label="Abóbora nova">
           <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
+        </button>
+        <button id="lid" aria-pressed="false" title="Tirar a tampa" aria-label="Tampa">
+          <svg viewBox="0 0 24 24"><path d="M4 15.5c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3z" /><path d="M12 9V5.5c0-1 .8-2 2.2-2.2" /></svg>
         </button>
         <button id="faces" class="accent" aria-expanded="false" aria-controls="stencils" title="Modelos de rosto">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M8 14.5s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01" /></svg>

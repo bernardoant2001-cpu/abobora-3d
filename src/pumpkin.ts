@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 import type { Pt, Stencil } from './stencils'
+import { createFlame } from './flame'
+import { FX } from './world'
 
 // mesmas medidas usadas em blender/scene.py
 export const RADIUS = 1.25
@@ -11,6 +13,15 @@ const GUIDE_H = 512
 const WALL = 0.92
 
 type P = [number, number]
+export type Brush = 'carve' | 'shave' | 'restore'
+
+// contorno em zigue-zague da tampa, em UV (v = 1 no topo); igual ao LID_GLSL abaixo
+const lidEdge = (u: number) => 0.835 + 0.02 * Math.abs((((u * 14) % 1) + 1) % 1 - 0.5) * 2
+const LID_GLSL = `
+uniform float uLid;
+float lidEdge( float u ) { return 0.835 + 0.02 * abs( fract( u * 14.0 ) - 0.5 ) * 2.0; }
+float lidCut( vec2 uv ) { return uLid * smoothstep( lidEdge( uv.x ) - 0.003, lidEdge( uv.x ) + 0.003, uv.y ); }
+`
 
 /**
  * Máscara pintada em UV: branco = casca, preto = escavado.
@@ -34,6 +45,8 @@ export class Carver {
   private poly: P[] = []
   private cut: CanvasGradient
   private patch: CanvasGradient
+  private peel: CanvasGradient
+  private probe = document.createElement('canvas')
 
   constructor() {
     this.canvas.width = this.snap.width = MASK_W
@@ -54,6 +67,13 @@ export class Carver {
     this.patch = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
     this.patch.addColorStop(0.55, 'rgba(255,255,255,1)')
     this.patch.addColorStop(1, 'rgba(255,255,255,0)')
+    // raspar só tira o vermelho (a casca fina); o verde continua dizendo que não está furado
+    this.peel = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
+    this.peel.addColorStop(0, 'rgba(0,255,255,0.22)')
+    this.peel.addColorStop(0.6, 'rgba(0,255,255,0.22)')
+    this.peel.addColorStop(1, 'rgba(0,255,255,0)')
+    this.probe.width = 64
+    this.probe.height = 32
 
     this.texture = new THREE.CanvasTexture(this.canvas)
     this.texture.wrapS = THREE.RepeatWrapping
@@ -87,7 +107,17 @@ export class Carver {
     this.last = null
   }
 
-  paint(uv: THREE.Vector2, size: number, carve: boolean) {
+  /** fração da casca que já foi furada (amostra reduzida, barata) */
+  carvedFraction() {
+    const g = this.probe.getContext('2d', { willReadFrequently: true })!
+    g.drawImage(this.canvas, 0, 0, 64, 32)
+    const d = g.getImageData(0, 0, 64, 32).data
+    let n = 0
+    for (let i = 1; i < d.length; i += 4) if (d[i] < 128) n++
+    return n / (64 * 32)
+  }
+
+  paint(uv: THREE.Vector2, size: number, mode: Brush) {
     const x = uv.x * MASK_W
     const y = (1 - uv.y) * MASK_H
     const [kx, ky] = scale(uv.y)
@@ -98,10 +128,10 @@ export class Carver {
       const [lx, ly] = this.last
       const steps = Math.ceil(Math.hypot((x - lx) / rx, (y - ly) / ry) / 0.2)
       for (let i = 1; i <= steps; i++) {
-        this.stamp(lx + ((x - lx) * i) / steps, ly + ((y - ly) * i) / steps, rx, ry, carve)
+        this.stamp(lx + ((x - lx) * i) / steps, ly + ((y - ly) * i) / steps, rx, ry, mode)
       }
     } else {
-      this.stamp(x, y, rx, ry, carve)
+      this.stamp(x, y, rx, ry, mode)
     }
     this.last = [x, y]
   }
@@ -248,9 +278,10 @@ export class Carver {
     this.dirty = true
   }
 
-  private stamp(x: number, y: number, rx: number, ry: number, carve: boolean) {
+  private stamp(x: number, y: number, rx: number, ry: number, mode: Brush) {
     const ctx = this.ctx
-    ctx.fillStyle = carve ? this.cut : this.patch
+    ctx.fillStyle = mode === 'carve' ? this.cut : mode === 'shave' ? this.peel : this.patch
+    ctx.globalCompositeOperation = mode === 'shave' ? 'multiply' : 'source-over'
     for (const ox of [0, -MASK_W, MASK_W]) {
       const cx = x + ox
       if (cx + rx < 0 || cx - rx > MASK_W) continue
@@ -264,6 +295,7 @@ export class Carver {
       this.box[3] = Math.max(this.box[3], y + ry)
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.globalCompositeOperation = 'source-over'
     this.dirty = true
   }
 }
@@ -288,8 +320,52 @@ function project([a, b]: Pt): P {
 
 const FLESH_SKIN = 'vec3( 1.0, 0.75, 0.35 )'
 
+/** separa a tampa (topo em zigue-zague) e a faixa de polpa da borda dela */
+function lidGeometry(geo: THREE.BufferGeometry) {
+  const uv = geo.getAttribute('uv')
+  const pos = geo.getAttribute('position')
+  const index = geo.index!
+  const keep: number[] = []
+  for (let i = 0; i < index.count; i += 3) {
+    const tri = [index.getX(i), index.getX(i + 1), index.getX(i + 2)]
+    if (tri.every((k) => uv.getY(k) > lidEdge(uv.getX(k)) - 0.012)) keep.push(...tri)
+  }
+  const lid = new THREE.BufferGeometry()
+  for (const [name, attr] of Object.entries(geo.attributes)) lid.setAttribute(name, attr)
+  lid.setIndex(keep)
+
+  // arestas usadas por um só triângulo formam a borda; liga a casca de fora à de dentro
+  const open = new Map<string, [number, number]>()
+  for (let i = 0; i < keep.length; i += 3) {
+    for (let e = 0; e < 3; e++) {
+      const a = keep[i + e]
+      const b = keep[i + ((e + 1) % 3)]
+      const key = a < b ? `${a}_${b}` : `${b}_${a}`
+      if (open.has(key)) open.delete(key)
+      else open.set(key, [a, b])
+    }
+  }
+  const strip: number[] = []
+  const va = new THREE.Vector3()
+  const vb = new THREE.Vector3()
+  for (const [a, b] of open.values()) {
+    va.fromBufferAttribute(pos, a)
+    vb.fromBufferAttribute(pos, b)
+    const ia = va.clone().multiplyScalar(WALL)
+    const ib = vb.clone().multiplyScalar(WALL)
+    strip.push(...vb.toArray(), ...va.toArray(), ...ia.toArray(), ...vb.toArray(), ...ia.toArray(), ...ib.toArray())
+  }
+  const rim = new THREE.BufferGeometry()
+  rim.setAttribute('position', new THREE.Float32BufferAttribute(strip, 3))
+  rim.computeVertexNormals()
+  // a tampa compartilha o atributo de posição da abóbora inteira: mede só os vértices dela
+  const bottom = Math.min(...keep.map((k) => pos.getY(k)))
+  return { lid, rim, bottom }
+}
+
 /** transforma a abóbora modelada no Blender numa lanterna esculpível */
 export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { value: number }) {
+  const lidOpen = { value: 0 }
   const skin = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.48,
@@ -298,13 +374,23 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
   })
   skin.onBeforeCompile = (shader) => {
     shader.uniforms.uGlow = glow
+    shader.uniforms.uLid = lidOpen
     shader.uniforms.uGuide = { value: carver.guideTexture }
     shader.uniforms.uWall = { value: (1 - WALL) * RADIUS * 0.9 }
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform float uWall;\nuniform sampler2D uGuide;')
+      .replace(
+        '#include <common>',
+        `#include <common>\nuniform float uGlow;\nuniform float uWall;\nuniform sampler2D uGuide;\n${LID_GLSL}`,
+      )
+      .replace(
+        '#include <alphamap_pars_fragment>',
+        `#include <alphamap_pars_fragment>
+        float maskG( vec2 uv ) { return textureLod( alphaMap, uv, 0.0 ).g * ( 1.0 - lidCut( uv ) ); }`,
+      )
       .replace(
         '#include <alphamap_fragment>',
-        `float carve = texture2D( alphaMap, vAlphaMapUv ).g;
+        `vec4 mk = texture2D( alphaMap, vAlphaMapUv );
+        float carve = mk.g * ( 1.0 - lidCut( vAlphaMapUv ) );
 
         // parede do corte: dentro de um buraco, segue o raio da câmera pela espessura da casca;
         // se ele encontra casca intacta, aquele pixel mostra a parede de polpa naquela profundidade
@@ -331,12 +417,12 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
           float prev = 0.0;
           for ( int i = 1; i <= 24; i ++ ) {
             float f = float( i ) / 24.0;
-            if ( textureLod( alphaMap, vAlphaMapUv + reach * f, 0.0 ).g >= 0.5 ) {
+            if ( maskG( vAlphaMapUv + reach * f ) >= 0.5 ) {
               float lo = prev;
               float hi = f;
               for ( int k = 0; k < 5; k ++ ) {
                 float m = 0.5 * ( lo + hi );
-                if ( textureLod( alphaMap, vAlphaMapUv + reach * m, 0.0 ).g >= 0.5 ) hi = m; else lo = m;
+                if ( maskG( vAlphaMapUv + reach * m ) >= 0.5 ) hi = m; else lo = m;
               }
               wallHit = 1.0;
               wallDepth = hi;
@@ -350,9 +436,14 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         float skinSide = 1.0 - wallHit;
         float rim = ( 1.0 - smoothstep( 0.5, 1.0, carve ) ) * skinSide;
         float ink = smoothstep( 0.5, 0.55, carve ) * ( 1.0 - smoothstep( 0.62, 0.72, carve ) ) * skinSide;
+        // casca raspada: polpa fina que deixa a vela atravessar
+        float shave = ( 1.0 - mk.r ) * skinSide * smoothstep( 0.85, 1.0, carve );
+        float shaveLine = smoothstep( 0.2, 0.4, shave ) * ( 1.0 - smoothstep( 0.4, 0.6, shave ) );
         float guide = texture2D( uGuide, vAlphaMapUv ).r * skinSide;
         vec3 wallColor = mix( vec3( 1.0, 0.84, 0.55 ), vec3( 0.95, 0.55, 0.18 ), wallDepth );
         diffuseColor.rgb = mix( diffuseColor.rgb, ${FLESH_SKIN}, rim );
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.82, 0.52 ), shave * 0.9 );
+        diffuseColor.rgb *= 1.0 - shaveLine * 0.35;
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.01, 0.006, 0.002 ), ink );
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.95, 0.8 ), guide );
         diffuseColor.rgb = mix( diffuseColor.rgb, wallColor * 0.65, wallHit );`,
@@ -361,6 +452,7 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         totalEmissiveRadiance += vec3( 1.0, 0.55, 0.15 ) * rim * ( 1.0 - ink ) * uGlow + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;
+        totalEmissiveRadiance += vec3( 1.0, 0.62, 0.22 ) * shave * uGlow * 0.55;
         totalEmissiveRadiance += wallColor * wallHit * ( 0.3 + 0.7 * wallDepth ) * uGlow;`,
       )
   }
@@ -375,8 +467,10 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
   })
   flesh.onBeforeCompile = (shader) => {
     shader.uniforms.uGlow = glow
+    shader.uniforms.uLid = lidOpen
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uGlow;')
+      .replace('#include <common>', `#include <common>\nuniform float uGlow;\n${LID_GLSL}`)
+      .replace('#include <alphamap_fragment>', 'diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).g * ( 1.0 - lidCut( vAlphaMapUv ) );')
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
@@ -389,11 +483,22 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
       )
   }
 
+  // sombra da vela: os furos e o topo sem tampa deixam a luz passar
+  const distance = new THREE.MeshDistanceMaterial({ alphaMap: carver.texture, alphaTest: 0.5 })
+  distance.onBeforeCompile = (shader) => {
+    shader.uniforms.uLid = lidOpen
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${LID_GLSL}`)
+      .replace('#include <alphamap_fragment>', 'diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).g * ( 1.0 - lidCut( vAlphaMapUv ) );')
+  }
+
   outer.material = skin
   outer.receiveShadow = false
+  outer.customDistanceMaterial = distance
   const inner = new THREE.Mesh(outer.geometry, flesh)
   inner.scale.setScalar(WALL)
   inner.castShadow = true
+  inner.customDistanceMaterial = distance
 
   const bottom = -(SQUASH - 0.2) * RADIUS * WALL
   const wax = new THREE.Mesh(
@@ -401,12 +506,8 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
     new THREE.MeshStandardMaterial({ color: '#f3ead8', roughness: 0.6, emissive: '#ffb060', emissiveIntensity: 0.4 }),
   )
   wax.position.y = bottom + 0.045
-  const flame = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 16, 12),
-    new THREE.MeshBasicMaterial({ color: new THREE.Color(5, 2.6, 0.8) }),
-  )
-  flame.scale.set(0.035, 0.085, 0.035)
-  flame.position.y = bottom + 0.16
+  const flame = createFlame(7, 0.2, FX)
+  flame.group.position.y = bottom + 0.09
 
   const light = new THREE.PointLight('#ff9b3d', 5, 0, 2)
   light.position.y = bottom + 0.3
@@ -416,7 +517,81 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
   light.shadow.normalBias = 0.02
   light.shadow.camera.near = 0.05
   light.shadow.camera.far = 9
+  light.shadow.radius = 2.5
 
-  outer.add(inner, wax, flame, light)
-  return { outer, flame, light }
+  // tampa: fica escondida (a casca inteira desenha o topo) até ser aberta
+  const parts = lidGeometry(outer.geometry)
+  const lid = new THREE.Group()
+  const lidMeshes = [
+    new THREE.Mesh(parts.lid, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.48 })),
+    new THREE.Mesh(parts.lid, new THREE.MeshStandardMaterial({ color: '#e88a2c', roughness: 0.9, side: THREE.BackSide })),
+    new THREE.Mesh(parts.rim, new THREE.MeshStandardMaterial({ color: '#ffd08a', roughness: 0.85, side: THREE.DoubleSide })),
+  ]
+  lidMeshes[1].scale.setScalar(WALL)
+  for (const m of lidMeshes) {
+    m.visible = false
+    m.castShadow = true
+  }
+  lid.add(...lidMeshes)
+  for (const name of ['PumpkinStem', 'PumpkinVine', 'PumpkinLeaf']) {
+    const o = outer.getObjectByName(name)
+    if (o) lid.add(o)
+  }
+
+  outer.add(inner, wax, flame.group, light, lid)
+
+  // animação da tampa: sobe, faz um arco e pousa na mesa ao lado (e volta)
+  const rest = new THREE.Vector3(1.75, -parts.bottom + 0.004, 0.95)
+  const restQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.04, 0.9, -0.05))
+  const scratch = new THREE.Vector3()
+  let anim: { t: number; p0: THREE.Vector3; q0: THREE.Quaternion; p1: THREE.Vector3; q1: THREE.Quaternion; opening: boolean } | null =
+    null
+  let open = false
+
+  return {
+    outer,
+    flame,
+    light,
+    baseLight: light.position.clone(),
+    get lidOpen() {
+      return open
+    },
+    toggleLid(scene: THREE.Scene) {
+      if (anim) return
+      const p0 = new THREE.Vector3()
+      const q0 = new THREE.Quaternion()
+      lid.matrixWorld.decompose(p0, q0, scratch)
+      if (!open) {
+        scene.attach(lid)
+        lidOpen.value = 1
+        for (const m of lidMeshes) m.visible = true
+        anim = { t: 0, p0, q0, p1: rest.clone(), q1: restQ.clone(), opening: true }
+      } else {
+        outer.updateMatrixWorld()
+        const p1 = new THREE.Vector3()
+        const q1 = new THREE.Quaternion()
+        outer.matrixWorld.decompose(p1, q1, scratch)
+        anim = { t: 0, p0, q0, p1, q1, opening: false }
+      }
+      open = !open
+    },
+    update(dt: number) {
+      if (!anim) return
+      anim.t = Math.min(1, anim.t + dt / 1.4)
+      const k = anim.t < 0.5 ? 4 * anim.t ** 3 : 1 - (-2 * anim.t + 2) ** 3 / 2
+      lid.position.lerpVectors(anim.p0, anim.p1, k)
+      lid.position.y += Math.sin(Math.PI * k) * 0.8
+      lid.quaternion.slerpQuaternions(anim.q0, anim.q1, k)
+      if (anim.t < 1) return
+      if (!anim.opening) {
+        outer.attach(lid)
+        lid.position.set(0, 0, 0)
+        lid.quaternion.identity()
+        lid.scale.set(1, 1, 1)
+        lidOpen.value = 0
+        for (const m of lidMeshes) m.visible = false
+      }
+      anim = null
+    },
+  }
 }

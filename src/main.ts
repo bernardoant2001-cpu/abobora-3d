@@ -529,6 +529,21 @@ addEventListener('resize', resize)
 resize()
 camera.position.copy(start)
 
+// chapéus altos: a câmera sobe e se afasta um pouco para tudo caber no quadro
+let framed = 0
+function frameTall(dt: number) {
+  const want = THREE.MathUtils.clamp((pumpkin.top() - 2.35) / 1.2, 0, 1)
+  const next = framed + (want - framed) * (1 - Math.exp(-dt * 3))
+  const dy = (next - framed) * 0.7
+  const zoom = (1 + next * 0.22) / (1 + framed * 0.22)
+  framed = next
+  offset.copy(camera.position).sub(controls.target).multiplyScalar(zoom)
+  controls.target.y += dy
+  camera.position.copy(controls.target).add(offset)
+  home.y += dy
+  start.y += dy
+}
+
 const warm = new THREE.Color('#ff8a2a')
 const hot = new THREE.Color('#ffb860')
 let mood = 0
@@ -613,6 +628,7 @@ renderer.setAnimationLoop((ms) => {
   bloom.strength = THREE.MathUtils.lerp(0.6, 0.8, mood)
 
   pumpkin.update(dt)
+  frameTall(dt)
   seeds.update(dt)
   surprises.update(t, dt, mood)
   updateWorld(t, mood)

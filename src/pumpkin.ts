@@ -556,7 +556,9 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
   }
   const accessories = new Map<string, THREE.Object3D>()
   // chapéus: raio da copa onde a aba encosta na casca (mesmas medidas de blender/accessories.py)
-  const HAT_RADIUS: Record<string, number> = { AccWitch: 0.44, AccTopHat: 0.38 }
+  const HAT_RADIUS: Record<string, number> = { AccWitch: 0.56, AccTopHat: 0.4 }
+  // altura visível de cada chapéu acima da aba (para a câmera enquadrar)
+  const HAT_HEIGHT: Record<string, number> = { AccWitch: 1.25, AccTopHat: 1.05 }
   const hats: { o: THREE.Object3D; radius: number; baseY: number; seats: number[] }[] = []
   for (const name of ['AccWitch', 'AccTopHat', 'AccBow', 'AccHorns']) {
     const o = outer.getObjectByName(name)
@@ -653,6 +655,19 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
       decor.forEach((o) => (o.visible = !hat))
       const o = name ? accessories.get(name) : undefined
       pop = o ? { o, t: 0 } : null
+    },
+    /** altura do ponto mais alto (abóbora + chapéu visível), em coordenadas do mundo */
+    top() {
+      const c = this.collider({ center: new THREE.Vector3(), radius: 0, height: 0 })
+      let top = c.center.y + c.height
+      if (!open) {
+        for (const hat of hats) {
+          if (!hat.o.visible) continue
+          const name = [...accessories].find(([, o]) => o === hat.o)![0]
+          top = Math.max(top, outer.position.y + hat.o.position.y + HAT_HEIGHT[name] * hat.o.scale.x)
+        }
+      }
+      return top
     },
     /** elipsoide aproximado do formato atual, em coordenadas do mundo */
     collider(out: { center: THREE.Vector3; radius: number; height: number }) {

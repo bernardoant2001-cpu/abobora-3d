@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d0824" />
+    <meta name="description" content="Esculpa sua própria abóbora de Halloween em 3D direto no navegador." />
+    <meta property="og:title" content="Abóbora — esculpa sua lanterna de Halloween" />
+    <meta property="og:description" content="Uma abóbora em 3D numa mesa à luz da lua. Pegue a faca e dê um rosto a ela." />
+    <title>Abóbora · Halloween</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Creepster&family=Fredoka:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <canvas id="scene" aria-label="Abóbora em 3D para esculpir"></canvas>
+
+    <header class="brand">
+      <h1>Abóbora</h1>
+      <p>Esculpa sua lanterna de Halloween</p>
+    </header>
+
+    <div class="corner">
+      <button id="lights" class="round" aria-pressed="false" title="Apagar as luzes" aria-label="Apagar as luzes">
+        <svg viewBox="0 0 24 24"><path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z" /></svg>
+      </button>
+      <button id="photo" class="round" title="Salvar foto" aria-label="Salvar foto">
+        <svg viewBox="0 0 24 24"><path d="M3 8.5h3.5l2-3h7l2 3H21V19H3z" /><circle cx="12" cy="13.3" r="3.6" /></svg>
+      </button>
+    </div>
+
+    <p id="hint" class="hint">Arraste sobre a abóbora para esculpir <span>·</span> arraste fora dela para girar</p>
+
+    <div id="stencils" class="stencils" hidden></div>
+
+    <nav class="toolbar" aria-label="Ferramentas">
+      <div class="seg" role="group" aria-label="Ferramenta">
+        <button data-tool="carve" aria-pressed="true" title="Faca">
+          <svg viewBox="0 0 24 24"><path d="M3.5 20.5 8 16" /><path d="M8 16 19.5 4.5c1.2 3.2-1.6 8.8-8.6 14.6z" /></svg>
+          <span>Faca</span>
+        </button>
+        <button data-tool="restore" aria-pressed="false" title="Remendo">
+          <svg viewBox="0 0 24 24"><rect x="2.5" y="8.5" width="19" height="7" rx="3.5" transform="rotate(-45 12 12)" /><path d="M10.5 10.5h.01M13.5 13.5h.01M13.5 10.5h.01M10.5 13.5h.01" /></svg>
+          <span>Remendo</span>
+        </button>
+      </div>
+      <label class="size" title="Tamanho da lâmina">
+        <span class="dot small"></span>
+        <input id="size" type="range" min="0.03" max="0.22" step="0.005" value="0.08" aria-label="Tamanho da lâmina" />
+        <span class="dot big"></span>
+      </label>
+      <div class="actions">
+        <button id="undo" title="Desfazer (Ctrl+Z)" aria-label="Desfazer">
+          <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+        </button>
+        <button id="clear" title="Abóbora nova" aria-label="Abóbora nova">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
+        </button>
+        <button id="faces" class="accent" aria-expanded="false" aria-controls="stencils" title="Modelos de rosto">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M8 14.5s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01" /></svg>
+          <span>Modelos</span>
+        </button>
+      </div>
+    </nav>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

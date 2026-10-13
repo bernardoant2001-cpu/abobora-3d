@@ -16,6 +16,7 @@ import { flicker } from './flame'
 import { audio } from './audio'
 import { STENCILS, thumbnail } from './stencils'
 import { createGallery } from './gallery'
+import { SHAPES, shapeIcon, type Shape } from './shapes'
 
 const $ = <T extends HTMLElement>(s: string) => document.querySelector<T>(s)!
 const canvas = $<HTMLCanvasElement>('#scene')
@@ -138,8 +139,13 @@ cursor.visible = false
 cursor.layers.set(FX)
 scene.add(cursor)
 
-type Tool = 'carve' | 'cut' | 'shave' | 'restore'
-const CURSOR_COLOR: Record<Tool, string> = { carve: '#f4e9ff', cut: '#f4e9ff', shave: '#ffd27a', restore: '#9dffb0' }
+type Tool = 'carve' | 'cut' | 'shape' | 'shave' | 'restore'
+const CURSOR_COLOR: Record<Tool, string> = { carve: '#f4e9ff', cut: '#f4e9ff', shape: '#f4e9ff', shave: '#ffd27a', restore: '#9dffb0' }
+// formas prontas: encosta no centro e arrasta; a distância é o tamanho e a direção aponta o topo da forma
+let shape: Shape = SHAPES[0]
+let shapeMode: 'carve' | 'shave' = 'carve'
+let shaping: { id: number; center: THREE.Vector2; r: number; angle: number; moved: boolean } | null = null
+const SHAPE_DEFAULT = 0.11
 const raycaster = new THREE.Raycaster()
 const ndc = new THREE.Vector2()
 const normal = new THREE.Vector3()
@@ -174,7 +180,40 @@ function showCursor(hit: THREE.Intersection | undefined, e: PointerEvent) {
   if (!hit?.face) return
   cursor.position.copy(hit.point).addScaledVector(normal, 0.01)
   cursor.lookAt(hit.point.clone().add(normal))
-  cursor.scale.setScalar(tool === 'cut' ? 0.025 : size)
+  cursor.scale.setScalar(tool === 'cut' || tool === 'shape' ? 0.025 : size)
+}
+
+function shapePts() {
+  return shaping ? carver.shapePoints(shaping.center, shaping.r, shaping.angle, shape.pts) : null
+}
+
+function updateShape(hit: THREE.Intersection | undefined) {
+  if (!shaping || !hit?.uv) return
+  const [a, b] = carver.surfaceOffset(shaping.center, hit.uv)
+  const r = Math.hypot(a, b)
+  if (r > 0.035) shaping.moved = true
+  if (shaping.moved) {
+    shaping.r = Math.max(0.035, r)
+    // topo da forma aponta para onde o dedo está; encaixa de 15 em 15° e "gruda" em pé
+    const raw = Math.atan2(-a, b)
+    shaping.angle = Math.abs(raw) < 0.22 ? 0 : Math.round(raw / (Math.PI / 12)) * (Math.PI / 12)
+  }
+  carver.previewShape(shapePts())
+}
+
+function finishShape(apply: boolean) {
+  if (!shaping) return
+  const pts = shapePts()
+  shaping = null
+  carver.previewShape(null)
+  if (!apply || !pts) return
+  carver.stampShape(pts, shapeMode)
+  if (shapeMode === 'carve') {
+    audio.slice()
+    if (lastHit) seeds.spawn(lastHit.point, lastHit.normal, 10)
+    scheduleLaugh()
+  } else audio.pop()
+  dismissHint()
 }
 
 /** pinta com a ferramenta atual; devolve quanto o cursor andou (para o som e as sementes) */
@@ -204,6 +243,7 @@ function stopGesture() {
     carver.end()
     audio.stopScrape()
   }
+  finishShape(false)
   carving = spinning = null
 }
 
@@ -219,7 +259,12 @@ canvas.addEventListener('pointerdown', (e) => {
   intro = 1
   // visitando a abóbora de alguém: só dá para girar, não esculpir
   const hit = tool === 'cut' || gallery.viewing ? undefined : pick(e)
-  if (hit) {
+  if (hit?.uv && tool === 'shape') {
+    shaping = { id: e.pointerId, center: hit.uv.clone(), r: SHAPE_DEFAULT, angle: 0, moved: false }
+    carver.previewShape(shapePts())
+    showCursor(hit, e)
+    dismissHint()
+  } else if (hit) {
     carving = e.pointerId
     lastBrush = null
     carver.begin()
@@ -250,6 +295,13 @@ canvas.addEventListener('pointermove', (e) => {
 
 const release = (e: PointerEvent) => {
   active.delete(e.pointerId)
+  if (shaping && e.pointerId === shaping.id) {
+    if (pointer) updateShape(pick(pointer))
+    pointer = null
+    finishShape(e.type === 'pointerup')
+    if (e.pointerType !== 'mouse') cursor.visible = false
+    return
+  }
   if (e.pointerId === carving) {
     if (pointer) brush(pick(pointer), pointer)
     pointer = null
@@ -333,13 +385,40 @@ cutCancel.addEventListener('click', () => {
   updateCutbar()
 })
 
+// paleta de formas e a chave recortar/raspar
+const shapebar = $('#shapebar')
+const shapeList = $('#shape-list')
+const shapeText = $('#shape-text')
+shapeText.textContent = `${touch ? 'Toque' : 'Clique'} no centro e arraste: a distância muda o tamanho e a direção gira a forma`
+for (const s of SHAPES) {
+  const b = document.createElement('button')
+  b.innerHTML = shapeIcon(s)
+  b.title = s.name
+  b.setAttribute('aria-label', s.name)
+  b.setAttribute('aria-pressed', String(s === shape))
+  b.addEventListener('click', () => {
+    shape = s
+    shapeList.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+  })
+  shapeList.append(b)
+}
+document.querySelectorAll<HTMLButtonElement>('[data-shape-mode]').forEach((b) =>
+  b.addEventListener('click', () => {
+    shapeMode = b.dataset.shapeMode as typeof shapeMode
+    document.querySelectorAll('[data-shape-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)))
+  }),
+)
+
 const toolButtons = document.querySelectorAll<HTMLButtonElement>('[data-tool]')
 function setTool(t: Tool) {
   if (t !== 'cut') carver.cancelPolygon()
+  if (t !== 'shape') finishShape(false)
   tool = t
   toolButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tool === t)))
   ;(cursor.material as THREE.MeshBasicMaterial).color.set(CURSOR_COLOR[t])
   updateCutbar()
+  shapebar.hidden = t !== 'shape'
+  if (t === 'shape') hint.hidden = true
 }
 toolButtons.forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool as Tool)))
 
@@ -637,7 +716,8 @@ renderer.setAnimationLoop((ms) => {
       const moved = brush(hit, pointer)
       if (moved > 0.5 && tool !== 'restore') audio.scrape(moved / 40, tool === 'shave')
       else audio.stopScrape()
-    } else if (tool === 'cut' && pointer.pointerType === 'mouse') carver.hover(hit?.uv ?? null)
+    } else if (shaping) updateShape(hit)
+    else if (tool === 'cut' && pointer.pointerType === 'mouse') carver.hover(hit?.uv ?? null)
     showCursor(hit, pointer)
     pointer = null
   } else if (carving !== null) audio.stopScrape()

@@ -697,6 +697,114 @@ button:focus-visible {
   .brand p { display: none; }
 }
 
+/* ---------- assinatura ---------- */
+
+.credit {
+  display: inline-block;
+  margin: 6px 0 0 2px;
+  font-size: 13px;
+  color: var(--paper);
+  text-decoration: none;
+  text-shadow: 0 1px 0 var(--ink), 0 0 10px rgba(0, 0, 0, 0.9);
+  pointer-events: auto;
+  opacity: 0.85;
+  transition: opacity 0.2s ease;
+}
+
+.credit strong,
+.expo-credit strong {
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.credit:hover,
+.credit:focus-visible {
+  opacity: 1;
+}
+
+.expo-credit {
+  align-self: flex-end;
+  margin-top: -4px;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.expo-credit:hover {
+  color: var(--ink);
+}
+
+/* ---------- formas prontas ---------- */
+
+.shapebar {
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100% - 24px);
+  white-space: normal;
+  padding: 8px 10px;
+  gap: 10px;
+}
+
+.shape-list {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.shapebar .shape-list button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 10px 12px 9px 11px;
+  background: none;
+}
+
+.shapebar .shape-list button svg {
+  width: 24px;
+  height: 24px;
+}
+
+.shapebar .shape-list button:hover {
+  background: rgba(26, 15, 6, 0.1);
+}
+
+.shapebar .shape-list button[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: rgba(26, 15, 6, 0.1);
+}
+
+.shape-mode {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  border: 2px dashed rgba(26, 15, 6, 0.35);
+}
+
+.shapebar .shape-mode button {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+}
+
+.shapebar .shape-mode button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.shape-text {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* ---------- exposição ---------- */
 
 .expo {
@@ -1021,4 +1129,18 @@ body.is-viewing .hint {
 @media (prefers-reduced-motion: reduce) {
   .brand h1, .toolbar, .hint, .stencils, .cutbar, .loader, .loader::before, .loader::after, .leader, .wave { animation: none; }
   .ready .loader { animation: none; visibility: hidden; }
+}
+
+/* barra de formas: mais respiro em relação à barra de ferramentas no celular */
+@media (max-width: 640px) {
+  .shapebar { bottom: calc(max(20px, env(safe-area-inset-bottom)) + 156px); gap: 6px; }
+  .shapebar .shape-list button { width: 34px; height: 34px; }
+  .shape-text { font-size: 12px; }
+  .credit { font-size: 12px; margin-top: 4px; }
+}
+
+@media (max-height: 500px) {
+  .shapebar { padding: 4px 8px; }
+  .shapebar, .hint, .stencils, .costume, .cutbar { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 68px); }
+  .shape-text { display: none; }
 }

@@ -8,6 +8,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 
 - **Faca**: esculpe à mão livre, com tamanho de lâmina ajustável — sementes e polpa saltam na mesa
 - **Recorte**: marque os cantos e corte com bordas retas (ótimo para dentes e triângulos)
+- **Formas**: círculo, triângulo, losango, estrela, coração, lua, raio e morcego, para recortar ou raspar; arraste para escolher o tamanho e o giro
 - **Raspar**: tira só a casca, sem furar; a parte raspada brilha fraquinho com a vela
 - **Remendo**: devolve a casca onde você cortou demais
 - **Tampa**: corte e levante a tampa da abóbora
@@ -16,6 +17,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 - Arraste fora da abóbora para girá-la e inclinar a vista
 - Apagar as luzes para ver só a vela brilhando pelos cortes
 - Sons sintetizados no navegador (vento, lareira, faca, coruja), com botão de mudo
+- **Exposição**: envie sua abóbora com seu nome (sem precisar de conta) e veja as dos outros em 3D na mesa; tudo passa por aprovação antes de aparecer
 - Algumas surpresas escondidas pela casa 👀
 - Salvar foto em PNG
 - Funciona no celular
@@ -26,6 +28,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 - [Blender](https://www.blender.org/) — modelagem da sala, da mesa, da abóbora e dos objetos, exportada como GLB comprimido com meshopt
 - Web Audio API — todos os sons gerados em tempo real, sem arquivos de áudio
 - [Vite](https://vite.dev/) + TypeScript
+- Vercel Functions + Vercel Blob para a exposição
 
 ## Rodando localmente
 
@@ -48,3 +51,7 @@ node scripts/compress-model.mjs
 O script também salva `blender/abobora.blend` (fora do Git) para você abrir e explorar no Blender.
 
 As texturas desenhadas (madeira, pedras, cartaz, tinta) são geradas no navegador e aplicadas pelo nome do material.
+
+---
+
+Desenvolvido por [Nadin](https://www.nadinweb.com.br/).

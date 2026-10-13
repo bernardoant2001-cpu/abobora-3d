@@ -201,6 +201,67 @@ export class Carver {
     this.replace(() => {})
   }
 
+  /** distância (em unidades de superfície) de `uv` até `center`: a = para a direita, b = para cima */
+  surfaceOffset(center: THREE.Vector2, uv: THREE.Vector2): P {
+    const [kx, ky] = scale(center.y)
+    let du = uv.x - center.x
+    du -= Math.round(du)
+    return [(du * MASK_W) / kx, ((uv.y - center.y) * MASK_H) / ky]
+  }
+
+  /** forma pronta (pontos unitários, topo em +y) posicionada na casca: centro, raio e rotação */
+  shapePoints(center: THREE.Vector2, r: number, angle: number, unit: Pt[]): P[] {
+    const [kx, ky] = scale(center.y)
+    const cx = center.x * MASK_W
+    const cy = (1 - center.y) * MASK_H
+    const c = Math.cos(angle)
+    const s = Math.sin(angle)
+    return unit.map(([x, y]) => [cx + (x * c - y * s) * r * kx, cy - (x * s + y * c) * r * ky])
+  }
+
+  /** contorno de prévia da forma na casca (null apaga) */
+  previewShape(pts: P[] | null) {
+    this.drawGuide()
+    if (!pts) return
+    const g = this.gctx
+    const k = GUIDE_W / MASK_W
+    g.lineJoin = 'round'
+    g.strokeStyle = '#fff'
+    g.lineWidth = 6
+    for (const ox of [0, -MASK_W, MASK_W]) {
+      g.setTransform(k, 0, 0, k, ox * k, 0)
+      g.beginPath()
+      for (const [x, y] of pts) g.lineTo(x, y)
+      g.closePath()
+      g.stroke()
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0)
+  }
+
+  /** aplica a forma: recorta (fura) ou só raspa a casca */
+  stampShape(pts: P[], mode: 'carve' | 'shave') {
+    this.begin()
+    const ctx = this.ctx
+    ctx.filter = 'blur(3px)'
+    ctx.fillStyle = mode === 'carve' ? '#000' : 'rgba(0,255,255,0.8)'
+    ctx.globalCompositeOperation = mode === 'carve' ? 'source-over' : 'multiply'
+    for (const ox of [0, -MASK_W, MASK_W]) {
+      ctx.beginPath()
+      for (const [x, y] of pts) ctx.lineTo(x + ox, y)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.filter = 'none'
+    ctx.globalCompositeOperation = 'source-over'
+    const xs = pts.map((p) => p[0])
+    const ys = pts.map((p) => p[1])
+    const wraps = Math.min(...xs) < 0 || Math.max(...xs) > MASK_W
+    this.box = [wraps ? 0 : Math.min(...xs) - 10, Math.min(...ys) - 10, wraps ? MASK_W : Math.max(...xs) + 10, Math.max(...ys) + 10]
+    this.end()
+    this.dirty = true
+    this.drawGuide()
+  }
+
   /** desenho do corte em meia resolução (PNG), para enviar à exposição */
   exportMask() {
     const c = document.createElement('canvas')

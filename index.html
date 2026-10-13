@@ -29,6 +29,7 @@
     <header class="brand">
       <h1>Abóbora</h1>
       <p>Esculpa sua lanterna de Halloween</p>
+      <a class="credit" href="https://www.nadinweb.com.br/" target="_blank" rel="noopener">Desenvolvido por <strong>Nadin</strong></a>
     </header>
 
     <div class="corner">
@@ -89,10 +90,20 @@
 
         <p id="expo-status" class="expo-status" role="status"></p>
         <div id="expo-grid" class="expo-grid"></div>
+        <a class="expo-credit" href="https://www.nadinweb.com.br/" target="_blank" rel="noopener">Desenvolvido por <strong>Nadin</strong></a>
       </section>
     </div>
 
     <p id="hint" class="hint paper">Arraste sobre a abóbora para esculpir <span>·</span> arraste fora dela para girar</p>
+
+    <div id="shapebar" class="cutbar shapebar paper" hidden>
+      <div id="shape-list" class="shape-list" role="group" aria-label="Forma"></div>
+      <div class="shape-mode" role="group" aria-label="O que a forma faz">
+        <button data-shape-mode="carve" aria-pressed="true">Recortar</button>
+        <button data-shape-mode="shave" aria-pressed="false">Raspar</button>
+      </div>
+      <span id="shape-text" class="shape-text"></span>
+    </div>
 
     <div id="cutbar" class="cutbar paper" hidden>
       <span id="cut-text"></span>
@@ -148,6 +159,10 @@
         <button data-tool="cut" aria-pressed="false" title="Recorte reto">
           <svg viewBox="0 0 24 24"><path d="M5 18 9 5l10 4-4 10z" /><circle cx="5" cy="18" r="1.6" /><circle cx="9" cy="5" r="1.6" /><circle cx="19" cy="9" r="1.6" /><circle cx="15" cy="19" r="1.6" /></svg>
           <span>Recorte</span>
+        </button>
+        <button data-tool="shape" aria-pressed="false" title="Formas prontas">
+          <svg viewBox="0 0 24 24"><path d="M8 3.5 9.6 7l3.8.4-2.9 2.5.9 3.7L8 11.7l-3.4 1.9.9-3.7L2.6 7.4 6.4 7z" /><circle cx="16.5" cy="16.5" r="4.5" /></svg>
+          <span>Formas</span>
         </button>
         <button data-tool="shave" aria-pressed="false" title="Raspar a casca (sem furar)">
           <svg viewBox="0 0 24 24"><path d="M4 20 13 11" /><path d="M13 11c1-3.5 3.6-6.2 7-7-.8 3.4-3.5 6-7 7z" /><path d="M7.5 16.5c-1.5.2-2.8-.4-3.5-1.5M11 13c-1.2.6-2.6.5-3.6-.3" /></svg>

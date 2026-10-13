@@ -1,83 +1,52 @@
 import * as THREE from 'three'
 import type { Pt, Stencil } from './stencils'
 
+// mesmas medidas usadas em blender/scene.py
 export const RADIUS = 1.25
 const SQUASH = 0.8
-const RIBS = 10
-const SEG_W = 192
-const SEG_H = 128
 const MASK_W = 2048
 const MASK_H = 1024
+const GUIDE_W = 1024
+const GUIDE_H = 512
 const WALL = 0.92
 
-export function pumpkinGeometry() {
-  const geo = new THREE.SphereGeometry(1, SEG_W, SEG_H, -Math.PI / 2)
-  const pos = geo.attributes.position
-  const uv = geo.attributes.uv
-  const colors = new Float32Array(pos.count * 3)
-  const lobe = new THREE.Color('#ff8a1f')
-  const groove = new THREE.Color('#b9420d')
-  const crown = new THREE.Color('#8f4512')
-  const c = new THREE.Color()
-
-  for (let i = 0; i < pos.count; i++) {
-    const phi = uv.getX(i) * Math.PI * 2
-    const theta = (1 - uv.getY(i)) * Math.PI
-    const s = Math.sin(theta)
-    const h = Math.cos(theta)
-    const g = 1 - Math.sqrt(Math.abs(Math.cos((RIBS * phi) / 2)))
-    const r = (1 - 0.1 * g) * (1 + 0.05 * Math.max(0, -h))
-    const pole = Math.exp(-(s * s) / 0.05)
-    const y = h * SQUASH - Math.sign(h) * (h > 0 ? 0.32 : 0.2) * pole
-    pos.setXYZ(i, pos.getX(i) * r * RADIUS, y * RADIUS, pos.getZ(i) * r * RADIUS)
-    c.copy(lobe)
-      .lerp(groove, Math.pow(g, 0.7))
-      .lerp(crown, Math.exp(-(s * s) / 0.15) * (h > 0 ? 0.85 : 0.4))
-    c.toArray(colors, i * 3)
-  }
-
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  geo.computeVertexNormals()
-
-  // a costura do UV duplica vértices; média das normais para não aparecer a emenda
-  const n = geo.attributes.normal
-  const a = new THREE.Vector3()
-  const b = new THREE.Vector3()
-  for (let y = 0; y <= SEG_H; y++) {
-    const i = y * (SEG_W + 1)
-    const j = i + SEG_W
-    a.fromBufferAttribute(n, i).add(b.fromBufferAttribute(n, j)).normalize()
-    n.setXYZ(i, a.x, a.y, a.z)
-    n.setXYZ(j, a.x, a.y, a.z)
-  }
-  geo.computeBoundingBox()
-  return geo
-}
+type P = [number, number]
 
 /**
  * Máscara pintada em UV: branco = casca, preto = escavado.
  * Vira o alphaMap da casca e da parede interna.
+ * A guia (outra textura) mostra o contorno do recorte reto antes de cortar.
  */
 export class Carver {
   readonly canvas = document.createElement('canvas')
   readonly texture: THREE.CanvasTexture
+  readonly guideTexture: THREE.CanvasTexture
   dirty = false
+  guideDirty = false
   private ctx: CanvasRenderingContext2D
+  private guide = document.createElement('canvas')
+  private gctx: CanvasRenderingContext2D
   private snap = document.createElement('canvas')
   private snapCtx: CanvasRenderingContext2D
   private history: { x: number; y: number; data: ImageData }[] = []
   private box = [Infinity, Infinity, -Infinity, -Infinity]
-  private last: [number, number] | null = null
+  private last: P | null = null
+  private poly: P[] = []
   private cut: CanvasGradient
   private patch: CanvasGradient
 
   constructor() {
     this.canvas.width = this.snap.width = MASK_W
     this.canvas.height = this.snap.height = MASK_H
+    this.guide.width = GUIDE_W
+    this.guide.height = GUIDE_H
     this.ctx = this.canvas.getContext('2d')!
+    this.gctx = this.guide.getContext('2d')!
     this.snapCtx = this.snap.getContext('2d', { willReadFrequently: true })!
     this.ctx.fillStyle = '#fff'
     this.ctx.fillRect(0, 0, MASK_W, MASK_H)
+    this.gctx.fillStyle = '#000'
+    this.gctx.fillRect(0, 0, GUIDE_W, GUIDE_H)
 
     this.cut = this.ctx.createRadialGradient(0, 0, 0, 0, 0, 1)
     this.cut.addColorStop(0.55, 'rgba(0,0,0,1)')
@@ -88,6 +57,12 @@ export class Carver {
 
     this.texture = new THREE.CanvasTexture(this.canvas)
     this.texture.wrapS = THREE.RepeatWrapping
+    this.guideTexture = new THREE.CanvasTexture(this.guide)
+    this.guideTexture.wrapS = THREE.RepeatWrapping
+  }
+
+  get points() {
+    return this.poly.length
   }
 
   begin() {
@@ -115,11 +90,9 @@ export class Carver {
   paint(uv: THREE.Vector2, size: number, carve: boolean) {
     const x = uv.x * MASK_W
     const y = (1 - uv.y) * MASK_H
-    const theta = (1 - uv.y) * Math.PI
-    const s = Math.sin(theta)
-    const c = Math.cos(theta)
-    const rx = (size * MASK_W) / (2 * Math.PI * RADIUS * Math.max(s, 0.15))
-    const ry = (size * MASK_H) / (Math.PI * RADIUS * Math.sqrt(c * c + SQUASH * SQUASH * s * s))
+    const [kx, ky] = scale(uv.y)
+    const rx = size * kx
+    const ry = size * ky
 
     if (this.last && Math.abs(x - this.last[0]) < MASK_W / 2) {
       const [lx, ly] = this.last
@@ -131,6 +104,60 @@ export class Carver {
       this.stamp(x, y, rx, ry, carve)
     }
     this.last = [x, y]
+  }
+
+  /** recorte reto: adiciona um canto; clicar de novo no primeiro canto fecha e corta */
+  addPoint(uv: THREE.Vector2) {
+    const p = this.toMask(uv)
+    if (this.poly.length >= 3 && this.nearFirst(p, uv.y)) return this.cutPolygon()
+    this.poly.push(p)
+    this.drawGuide()
+    return false
+  }
+
+  removePoint() {
+    this.poly.pop()
+    this.drawGuide()
+  }
+
+  cancelPolygon() {
+    if (!this.poly.length) return
+    this.poly = []
+    this.drawGuide()
+  }
+
+  hover(uv: THREE.Vector2 | null) {
+    if (this.poly.length) this.drawGuide(uv)
+  }
+
+  cutPolygon() {
+    if (this.poly.length < 3) return false
+    const pts = this.poly
+    this.poly = []
+    this.begin()
+    const ctx = this.ctx
+    ctx.filter = 'blur(3px)'
+    ctx.fillStyle = '#000'
+    for (const ox of [0, -MASK_W, MASK_W]) {
+      ctx.beginPath()
+      for (const [x, y] of pts) ctx.lineTo(x + ox, y)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.filter = 'none'
+    const xs = pts.map((p) => p[0])
+    const ys = pts.map((p) => p[1])
+    const wraps = Math.min(...xs) < 0 || Math.max(...xs) > MASK_W
+    this.box = [
+      wraps ? 0 : Math.min(...xs) - 10,
+      Math.min(...ys) - 10,
+      wraps ? MASK_W : Math.max(...xs) + 10,
+      Math.max(...ys) + 10,
+    ]
+    this.end()
+    this.dirty = true
+    this.drawGuide()
+    return true
   }
 
   undo() {
@@ -159,7 +186,59 @@ export class Carver {
     })
   }
 
+  private toMask(uv: THREE.Vector2): P {
+    let x = uv.x * MASK_W
+    const first = this.poly[0]
+    if (first && x - first[0] > MASK_W / 2) x -= MASK_W
+    else if (first && first[0] - x > MASK_W / 2) x += MASK_W
+    return [x, (1 - uv.y) * MASK_H]
+  }
+
+  private nearFirst(p: P, v: number) {
+    const [kx, ky] = scale(v)
+    const f = this.poly[0]
+    return Math.hypot((p[0] - f[0]) / kx, (p[1] - f[1]) / ky) < 0.07
+  }
+
+  private drawGuide(cursor: THREE.Vector2 | null = null) {
+    const g = this.gctx
+    g.setTransform(1, 0, 0, 1, 0, 0)
+    g.fillStyle = '#000'
+    g.fillRect(0, 0, GUIDE_W, GUIDE_H)
+    this.guideDirty = true
+    if (!this.poly.length) return
+
+    const c = cursor ? this.toMask(cursor) : null
+    const closing = !!c && this.poly.length >= 3 && this.nearFirst(c, cursor!.y)
+    const k = GUIDE_W / MASK_W
+    g.lineJoin = g.lineCap = 'round'
+    for (const ox of [0, -MASK_W, MASK_W]) {
+      g.setTransform(k, 0, 0, k, ox * k, 0)
+      g.strokeStyle = '#fff'
+      g.lineWidth = 5
+      g.beginPath()
+      for (const [x, y] of this.poly) g.lineTo(x, y)
+      g.stroke()
+      if (c) {
+        g.globalAlpha = 0.55
+        g.beginPath()
+        g.moveTo(...this.poly[this.poly.length - 1])
+        g.lineTo(...(closing ? this.poly[0] : c))
+        g.stroke()
+        g.globalAlpha = 1
+      }
+      g.fillStyle = '#fff'
+      this.poly.forEach(([x, y], i) => {
+        g.beginPath()
+        g.arc(x, y, i === 0 ? (closing ? 20 : 13) : 9, 0, Math.PI * 2)
+        g.fill()
+      })
+    }
+    g.setTransform(1, 0, 0, 1, 0, 0)
+  }
+
   private replace(draw: (ctx: CanvasRenderingContext2D) => void) {
+    this.cancelPolygon()
     this.begin()
     this.ctx.fillStyle = '#fff'
     this.ctx.fillRect(0, 0, MASK_W, MASK_H)
@@ -189,92 +268,54 @@ export class Carver {
   }
 }
 
+/** pixels da máscara por unidade de superfície, na latitude dada pelo v */
+function scale(v: number): P {
+  const theta = (1 - v) * Math.PI
+  const s = Math.sin(theta)
+  const c = Math.cos(theta)
+  return [
+    MASK_W / (2 * Math.PI * RADIUS * Math.max(s, 0.15)),
+    MASK_H / (Math.PI * RADIUS * Math.sqrt(c * c + SQUASH * SQUASH * s * s)),
+  ]
+}
+
 /** coordenadas na superfície (comprimento de arco a partir do centro da frente) → pixel da máscara */
-function project([a, b]: Pt): [number, number] {
+function project([a, b]: Pt): P {
   const theta = Math.PI / 2 - b / (RADIUS * SQUASH)
   const phi = a / (RADIUS * Math.sin(theta) * 0.97)
   return [MASK_W * (0.5 + phi / (Math.PI * 2)), (MASK_H * theta) / Math.PI]
 }
 
-export function createStem() {
-  const geo = new THREE.CylinderGeometry(0.07, 0.12, 0.5, 16, 12)
-  const p = geo.attributes.position
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i)
-    const z = p.getZ(i)
-    const y = p.getY(i) + 0.25
-    const k = (1 + 0.12 * Math.cos(Math.atan2(z, x) * 7)) * (1 + 0.9 * Math.exp(-y * 18))
-    p.setXYZ(i, x * k + 0.55 * y * y, y, z * k)
-  }
-  geo.computeVertexNormals()
-  const side = new THREE.MeshStandardMaterial({ color: '#5f7326', roughness: 0.85 })
-  const cap = new THREE.MeshStandardMaterial({ color: '#c8b27a', roughness: 0.9 })
-  const stem = new THREE.Mesh(geo, [side, cap, cap])
-  stem.castShadow = true
-  return stem
-}
-
-export function leafGeometry() {
-  const s = new THREE.Shape()
-  s.moveTo(0, 0)
-  s.bezierCurveTo(0.14, 0.04, 0.2, 0.22, 0, 0.42)
-  s.bezierCurveTo(-0.2, 0.22, -0.14, 0.04, 0, 0)
-  const geo = new THREE.ShapeGeometry(s, 16)
-  const p = geo.attributes.position
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i)
-    const y = p.getY(i)
-    p.setZ(i, x * x * 1.6 - y * y * 0.35)
-  }
-  geo.computeVertexNormals()
-  return geo
-}
-
-function createVine() {
-  const base = new THREE.Vector3(0.06, 0.62, 0.02)
-  const end = new THREE.Vector3(0.7, 1.05, -0.25)
-  const dir = end.clone().sub(base).normalize()
-  const u = new THREE.Vector3(0, 1, 0).cross(dir).normalize()
-  const v = dir.clone().cross(u)
-  const pts: THREE.Vector3[] = []
-  for (let i = 0; i <= 60; i++) {
-    const t = i / 60
-    const a = t * Math.PI * 9
-    const r = 0.075 * (1 - 0.55 * t) * Math.min(1, t * 6)
-    pts.push(
-      base.clone().lerp(end, t).addScaledVector(u, Math.cos(a) * r).addScaledVector(v, Math.sin(a) * r),
-    )
-  }
-  const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 200, 0.014, 6)
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#557a22', roughness: 0.7 }))
-}
-
 const FLESH_SKIN = 'vec3( 1.0, 0.75, 0.35 )'
 
-export function createCarvedPumpkin(geo: THREE.BufferGeometry, mask: THREE.Texture, glow: { value: number }) {
-  const group = new THREE.Group()
-
+/** transforma a abóbora modelada no Blender numa lanterna esculpível */
+export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { value: number }) {
   const skin = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 0.48,
-    alphaMap: mask,
+    alphaMap: carver.texture,
     alphaTest: 0.5,
   })
   skin.onBeforeCompile = (shader) => {
     shader.uniforms.uGlow = glow
+    shader.uniforms.uGuide = { value: carver.guideTexture }
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uGlow;')
+      .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform sampler2D uGuide;')
       .replace(
         '#include <alphamap_fragment>',
         `float carve = texture2D( alphaMap, vAlphaMapUv ).g;
         diffuseColor.a *= carve;
         float rim = 1.0 - smoothstep( 0.5, 1.0, carve );
-        diffuseColor.rgb = mix( diffuseColor.rgb, ${FLESH_SKIN}, rim );`,
+        float ink = smoothstep( 0.5, 0.55, carve ) * ( 1.0 - smoothstep( 0.62, 0.72, carve ) );
+        float guide = texture2D( uGuide, vAlphaMapUv ).r;
+        diffuseColor.rgb = mix( diffuseColor.rgb, ${FLESH_SKIN}, rim );
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.01, 0.006, 0.002 ), ink );
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.95, 0.8 ), guide );`,
       )
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-        totalEmissiveRadiance += vec3( 1.0, 0.55, 0.15 ) * rim * uGlow;`,
+        totalEmissiveRadiance += vec3( 1.0, 0.55, 0.15 ) * rim * ( 1.0 - ink ) * uGlow + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;`,
       )
   }
 
@@ -283,7 +324,7 @@ export function createCarvedPumpkin(geo: THREE.BufferGeometry, mask: THREE.Textu
     color: '#ff9a2e',
     roughness: 0.9,
     side: THREE.DoubleSide,
-    alphaMap: mask,
+    alphaMap: carver.texture,
     alphaTest: 0.5,
   })
   flesh.onBeforeCompile = (shader) => {
@@ -302,30 +343,13 @@ export function createCarvedPumpkin(geo: THREE.BufferGeometry, mask: THREE.Textu
       )
   }
 
-  const outer = new THREE.Mesh(geo, skin)
-  outer.castShadow = true
-  const inner = new THREE.Mesh(geo, flesh)
+  outer.material = skin
+  outer.receiveShadow = false
+  const inner = new THREE.Mesh(outer.geometry, flesh)
   inner.scale.setScalar(WALL)
   inner.castShadow = true
 
-  const top = (SQUASH - 0.32) * RADIUS
   const bottom = -(SQUASH - 0.2) * RADIUS * WALL
-
-  const stem = createStem()
-  stem.position.y = top - 0.06
-  stem.rotation.y = 0.6
-
-  const vine = createVine()
-  vine.castShadow = true
-
-  const leaf = new THREE.Mesh(
-    leafGeometry(),
-    new THREE.MeshStandardMaterial({ color: '#5c8a2b', roughness: 0.75, side: THREE.DoubleSide }),
-  )
-  leaf.position.set(-0.08, top + 0.02, 0.06)
-  leaf.rotation.set(-1.05, 0.2, 0.9)
-  leaf.castShadow = true
-
   const wax = new THREE.Mesh(
     new THREE.CylinderGeometry(0.13, 0.13, 0.09, 24),
     new THREE.MeshStandardMaterial({ color: '#f3ead8', roughness: 0.6, emissive: '#ffb060', emissiveIntensity: 0.4 }),
@@ -345,21 +369,8 @@ export function createCarvedPumpkin(geo: THREE.BufferGeometry, mask: THREE.Textu
   light.shadow.bias = -0.004
   light.shadow.normalBias = 0.02
   light.shadow.camera.near = 0.05
+  light.shadow.camera.far = 9
 
-  group.add(outer, inner, stem, vine, leaf, wax, flame, light)
-  group.position.y = -geo.boundingBox!.min.y
-  return { group, outer, flame, light }
-}
-
-export function createSmallPumpkin(geo: THREE.BufferGeometry, scale: number) {
-  const group = new THREE.Group()
-  const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5 }))
-  body.castShadow = true
-  body.receiveShadow = true
-  const stem = createStem()
-  stem.position.y = (SQUASH - 0.32) * RADIUS - 0.06
-  group.add(body, stem)
-  group.scale.setScalar(scale)
-  group.position.y = -geo.boundingBox!.min.y * scale
-  return group
+  outer.add(inner, wax, flame, light)
+  return { outer, flame, light }
 }

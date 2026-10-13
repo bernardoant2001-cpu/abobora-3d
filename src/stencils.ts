@@ -115,21 +115,25 @@ export function thumbnail(s: Stencil, size = 88) {
   const g = c.getContext('2d')!
   const k = size * 0.6
   const disc = g.createRadialGradient(size * 0.4, size * 0.35, 0, size / 2, size / 2, size / 2)
-  disc.addColorStop(0, '#ff9a3a')
-  disc.addColorStop(1, '#c2410c')
+  disc.addColorStop(0, '#e0a24a')
+  disc.addColorStop(1, '#8a5218')
+  g.strokeStyle = '#1a0f06'
+  g.lineJoin = 'round'
   const path = (pts: Pt[], color: string) => {
     g.fillStyle = color
     g.beginPath()
     for (const [a, b] of pts) g.lineTo(size / 2 + a * k, size * 0.5 - b * k)
     g.closePath()
     g.fill()
+    g.lineWidth = 1.5
+    g.stroke()
   }
   g.fillStyle = disc
+  g.lineWidth = 2.5
   g.beginPath()
-  g.arc(size / 2, size / 2, size * 0.47, 0, Math.PI * 2)
+  g.arc(size / 2, size / 2, size * 0.45, 0, Math.PI * 2)
   g.fill()
-  g.shadowColor = '#ffcc66'
-  g.shadowBlur = 6
-  s.draw({ carve: (p) => path(p, '#ffe08a'), keep: (p) => path(p, '#e86a1c') })
+  g.stroke()
+  s.draw({ carve: (p) => path(p, '#fff1c4'), keep: (p) => path(p, '#c27a2a') })
   return c
 }

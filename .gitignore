@@ -3,3 +3,7 @@ dist
 .vercel
 *.local
 .DS_Store
+*.blend1
+*.blend
+.env
+.env.*

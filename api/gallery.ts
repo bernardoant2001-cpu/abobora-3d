@@ -185,5 +185,25 @@ export async function POST(request: Request) {
   const entry: Entry = { id, name, shape, accessory, createdAt: new Date().toISOString(), mask: maskBlob.url, thumb: thumbBlob.url }
   if (paintBlob) entry.paint = paintBlob.url
   await put(`pending/${id}.json`, JSON.stringify(entry), { ...opts, contentType: 'application/json', cacheControlMaxAge: 60 })
+  await notify(entry, new URL(request.url).origin)
   return json({ ok: true, id }, 201)
+}
+
+/** avisa no celular (app ntfy, tópico secreto em NTFY_TOPIC) que tem abóbora esperando aprovação; nunca derruba o envio */
+async function notify(entry: Entry, origin: string) {
+  const topic = process.env.NTFY_TOPIC
+  if (!topic) return
+  await fetch('https://ntfy.sh/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      topic,
+      title: 'Abóbora nova para aprovar 🎃',
+      message: `${entry.name} mandou uma abóbora para a exposição.`,
+      click: `${origin}/admin.html`,
+      attach: entry.thumb,
+      filename: 'abobora.jpg',
+    }),
+    signal: AbortSignal.timeout(3000),
+  }).catch(() => {})
 }

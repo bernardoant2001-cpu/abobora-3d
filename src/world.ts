@@ -100,61 +100,16 @@ function horizon() {
       branch(x2, y2, len * (0.6 + rand() * 0.2), ang + (rand() - 0.5) * 1.5, w * 0.62, depth - 1)
     }
   }
-  for (const u of [0.05, 0.15, 0.25, 0.35, 0.43, 0.462, 0.528, 0.56, 0.65, 0.75, 0.85, 0.95]) {
+  // só árvores distantes; a casa, as lápides e as árvores perto da janela são 3D (blender/scene.py)
+  for (const u of [0.05, 0.15, 0.25, 0.35, 0.65, 0.75, 0.85, 0.95]) {
     const x = u * C
     const h = 1.2 + rand() * 1.3
     branch(x, near(x) - 0.2, h, Math.PI / 2 + (rand() - 0.5) * 0.2, 0.22 + rand() * 0.1, 5)
   }
 
-  for (const [u, s] of [[0.474, 1], [0.481, 0.8], [0.488, 1.1], [0.495, 0.7]]) {
-    const x = u * C
-    const y = near(x) - 0.15
-    g.beginPath()
-    g.moveTo(x - 0.35 * s, y)
-    g.lineTo(x - 0.35 * s, y + 0.55 * s)
-    g.arc(x, y + 0.55 * s, 0.35 * s, Math.PI, 0, true)
-    g.lineTo(x + 0.35 * s, y)
-    g.fill()
-  }
-
-  const hx = 0.516 * C
-  const hy = near(hx) - 0.2
-  g.beginPath()
-  g.rect(hx - 1.6, hy, 3.2, 1.9)
-  g.moveTo(hx - 1.9, hy + 1.8)
-  g.lineTo(hx, hy + 3.1)
-  g.lineTo(hx + 1.9, hy + 1.8)
-  g.rect(hx - 2.4, hy, 1.0, 3.2)
-  g.moveTo(hx - 2.6, hy + 3.1)
-  g.lineTo(hx - 1.9, hy + 4.7)
-  g.lineTo(hx - 1.2, hy + 3.1)
-  g.rect(hx + 0.8, hy + 2.2, 0.35, 1.1)
-  g.fill()
-  g.fillStyle = '#ffb347'
-  g.shadowColor = '#ff9a2e'
-  g.shadowBlur = 18
-  for (const [x, y, w, h] of [[-2.05, 2.2, 0.3, 0.45], [-1.1, 0.8, 0.45, 0.5], [0.6, 0.8, 0.45, 0.5], [-0.18, 2.05, 0.36, 0.36]]) {
-    g.fillRect(hx + x, hy + y, w, h)
-  }
-  g.shadowBlur = 0
-
-  g.fillStyle = '#0b0614'
-  for (const [u, y, s] of [[0.49, 5.6, 0.45], [0.497, 6.3, 0.3], [0.484, 6.6, 0.28]]) {
-    const x = u * C
-    g.beginPath()
-    g.moveTo(x, y)
-    g.quadraticCurveTo(x - 0.5 * s, y + 0.5 * s, x - 1.3 * s, y + 0.4 * s)
-    g.quadraticCurveTo(x - 0.9 * s, y + 0.1 * s, x - 0.75 * s, y - 0.15 * s)
-    g.quadraticCurveTo(x - 0.4 * s, y, x, y - 0.3 * s)
-    g.quadraticCurveTo(x + 0.4 * s, y, x + 0.75 * s, y - 0.15 * s)
-    g.quadraticCurveTo(x + 0.9 * s, y + 0.1 * s, x + 1.3 * s, y + 0.4 * s)
-    g.quadraticCurveTo(x + 0.5 * s, y + 0.5 * s, x, y)
-    g.fill()
-  }
-
   const mesh = new THREE.Mesh(
     new THREE.CylinderGeometry(R, R, TOP - BOTTOM, 128, 1, true),
-    new THREE.MeshBasicMaterial({ map: srgb(c), transparent: true, side: THREE.BackSide, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ map: srgb(c), transparent: true, side: THREE.BackSide, depthWrite: false, fog: false }),
   )
   mesh.position.y = (TOP + BOTTOM) / 2
   mesh.renderOrder = -1
@@ -183,7 +138,7 @@ function moon() {
     g.fill()
   }
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: srgb(c), color: new THREE.Color(1.5, 1.5, 1.5), depthWrite: false }),
+    new THREE.SpriteMaterial({ map: srgb(c), color: new THREE.Color(0.95, 0.95, 0.95), depthWrite: false, fog: false }),
   )
   sprite.position.set(9, 9, -58)
   sprite.scale.setScalar(16)
@@ -205,7 +160,54 @@ function stars() {
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
-  return new THREE.Points(geo, new THREE.PointsMaterial({ size: 1.7, sizeAttenuation: false, vertexColors: true, depthWrite: false }))
+  return new THREE.Points(
+    geo,
+    new THREE.PointsMaterial({ size: 1.7, sizeAttenuation: false, vertexColors: true, depthWrite: false, fog: false }),
+  )
+}
+
+/** morcegos batendo asas em volta de um ponto */
+function bats(centers: THREE.Vector3[]) {
+  const s = new THREE.Shape()
+  s.moveTo(0, 0.06)
+  s.quadraticCurveTo(0.25, 0.22, 0.62, 0.16)
+  s.quadraticCurveTo(0.5, 0.06, 0.52, -0.06)
+  s.quadraticCurveTo(0.42, 0.02, 0.36, -0.08)
+  s.quadraticCurveTo(0.27, -0.01, 0.2, -0.1)
+  s.quadraticCurveTo(0.12, -0.02, 0, -0.04)
+  const wingGeo = new THREE.ShapeGeometry(s)
+  wingGeo.rotateX(-Math.PI / 2)
+  const mat = new THREE.MeshBasicMaterial({ color: '#0b0614', side: THREE.DoubleSide })
+  const bodyGeo = new THREE.SphereGeometry(1, 8, 6)
+  const flock = centers.flatMap((c, ci) =>
+    [0, 1, 2].map((i) => {
+      const bat = new THREE.Group()
+      const body = new THREE.Mesh(bodyGeo, mat)
+      body.scale.set(0.07, 0.06, 0.13)
+      const right = new THREE.Mesh(wingGeo, mat)
+      const left = new THREE.Mesh(wingGeo, mat)
+      left.scale.x = -1
+      bat.add(body, right, left)
+      bat.scale.setScalar(1.6)
+      return { bat, right, left, c, r: 2.2 + i * 1.1, speed: 0.35 + i * 0.12 + ci * 0.05, phase: i * 2.1 + ci }
+    }),
+  )
+  const next = new THREE.Vector3()
+  const at = (f: (typeof flock)[number], a: number, out: THREE.Vector3) =>
+    out.set(f.c.x + Math.cos(a) * f.r, f.c.y + Math.sin(a * 2) * 0.5, f.c.z + Math.sin(a) * f.r * 0.6)
+  return {
+    group: new THREE.Group().add(...flock.map((f) => f.bat)),
+    update(t: number) {
+      for (const f of flock) {
+        const a = t * f.speed + f.phase
+        at(f, a, f.bat.position)
+        f.bat.lookAt(at(f, a + 0.05, next))
+        const flap = Math.sin(t * 16 + f.phase) * 0.75
+        f.right.rotation.z = flap
+        f.left.rotation.z = -flap
+      }
+    },
+  }
 }
 
 // ---------------------------------------------------------------- texturas em nanquim
@@ -548,6 +550,34 @@ function dripTexture(w: number, h: number, seed: number) {
   return t
 }
 
+/** telhas arredondadas desenhadas a nanquim */
+function shingles() {
+  const S = 256
+  const [c, g] = canvas(S, S)
+  const rand = rng(23)
+  g.fillStyle = '#1a120c'
+  g.fillRect(0, 0, S, S)
+  const rows = 8
+  const rh = S / rows
+  const tw = 32
+  g.strokeStyle = INK
+  g.lineWidth = 2.5
+  for (let r = rows - 1; r >= 0; r--) {
+    for (let x = r % 2 ? -tw / 2 : 0; x < S; x += tw) {
+      g.fillStyle = `hsl(${20 + rand() * 10} 18% ${20 + rand() * 12}%)`
+      g.beginPath()
+      g.moveTo(x, r * rh)
+      g.lineTo(x, r * rh + rh * 0.6)
+      g.quadraticCurveTo(x + tw / 2, r * rh + rh * 1.35, x + tw, r * rh + rh * 0.6)
+      g.lineTo(x + tw, r * rh)
+      g.closePath()
+      g.fill()
+      g.stroke()
+    }
+  }
+  return c
+}
+
 function puddleTexture(seed: number) {
   const [c, g] = canvas(256, 256)
   const rand = rng(seed)
@@ -578,6 +608,21 @@ function dress(root: THREE.Object3D) {
     DarkWood: (m) => (m.map = srgb(planks(7, 4, 34, false, false), 2.2)),
     Wallpaper: (m) => (m.map = srgb(planks(13, 5, 52, true), 2.6)),
     Stone: (m) => (m.map = srgb(stones(), 2.2)),
+    // lá fora fica escuro de propósito: silhueta contra o céu, com as janelas acesas se destacando
+    HouseWall: (m) => {
+      m.map = srgb(planks(37, 6, 34, true), 2.4)
+      m.color.set('#221a22')
+    },
+    HouseRoof: (m) => {
+      m.map = srgb(shingles(), 1.6)
+      m.color.set('#2e2428')
+    },
+    HouseTrim: (m) => m.color.set('#120c0a'),
+    // brilho contido: com mais que isso o halo do bloom lava a fachada inteira
+    HouseWindowLit: (m) => (m.emissiveIntensity = 1.6),
+    HouseWindowFlicker: (m) => (m.emissiveIntensity = 1.6),
+    OutsideGround: (m) => m.color.set('#110c12'),
+    Grave: (m) => m.color.set('#2a2630'),
     Poster: (m) => (m.map = poster()),
     Painting: (m) => {
       Object.assign(m, painting())
@@ -699,10 +744,23 @@ function dust() {
   return { points, update }
 }
 
+function findMaterial(root: THREE.Object3D, name: string) {
+  const all: THREE.Material[] = []
+  root.traverse((o) => all.push(...[(o as THREE.Mesh).material ?? []].flat()))
+  return all.find((m) => m.name === name) as THREE.MeshStandardMaterial | undefined
+}
+
 export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
   scene.background = skyTexture()
+  // névoa só alcança a paisagem lá fora (a sala inteira fica a menos de 16 unidades da câmera)
+  scene.fog = new THREE.Fog('#2b1b33', 22, 110)
   scene.add(fx(horizon()), fx(moon()), fx(stars()), room)
   dress(room)
+
+  const flock = bats(['BatsMoon', 'BatsTower'].map((n) => room.getObjectByName(n)!.position))
+  scene.add(flock.group)
+  const flickerWin = findMaterial(room, 'HouseWindowFlicker')
+  const flickerBase = flickerWin?.emissiveIntensity ?? 1
 
   const hemi = new THREE.HemisphereLight('#d9b27a', '#2a1808', 0.5)
   const fill = new THREE.DirectionalLight('#ffd9a8', 0.35)
@@ -734,7 +792,7 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
   spot.shadow.camera.far = 14
   pivot.add(spot, spot.target)
   const bulb = (room.getObjectByName('LampBulb') as THREE.Mesh).material as THREE.MeshStandardMaterial
-  const bulbGlow = bulb.emissiveIntensity
+  const bulbGlow = bulb.emissiveIntensity * 0.4
   pivot.traverse((o) => (o.castShadow = false))
 
   const flames: THREE.Mesh[] = []
@@ -775,6 +833,11 @@ export function createWorld(scene: THREE.Scene, room: THREE.Object3D) {
     pivot.rotation.z = 0.045 * Math.sin(t * 0.8)
     pivot.rotation.x = 0.03 * Math.sin(t * 0.63 + 1.2)
     motes.update(t)
+    flock.update(t)
+    if (flickerWin) {
+      const k = 0.55 + 0.3 * Math.sin(t * 7.1) + 0.15 * Math.sin(t * 17.3)
+      flickerWin.emissiveIntensity = flickerBase * (Math.sin(t * 0.4) > 0.93 ? 0.05 : k)
+    }
     hearth?.update(t)
     flames.forEach((f, i) => (f.scale.y = 0.058 * (0.85 + 0.15 * Math.sin(t * (11 + i * 3) + i))))
     candleLight.intensity = 1.4 * (0.9 + 0.1 * Math.sin(t * 9.3))

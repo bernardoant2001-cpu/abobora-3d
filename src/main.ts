@@ -18,7 +18,7 @@ const canvas = $<HTMLCanvasElement>('#scene')
 const renderer = new THREE.WebGLRenderer({ canvas, powerPreference: 'high-performance' })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75))
 renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = 1.2
+renderer.toneMappingExposure = 1.45
 renderer.shadowMap.enabled = true
 renderer.shadowMap.autoUpdate = false
 
@@ -43,7 +43,7 @@ const pumpkin = createCarvedPumpkin(gltf.scene.getObjectByName('Pumpkin') as THR
 const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 })
 const composer = new EffectComposer(renderer, target)
 composer.addPass(new RenderPass(scene, camera))
-const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.55, 0.85)
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.6, 0.22, 1.0)
 composer.addPass(bloom)
 composer.addPass(new OutputPass())
 const ink = createInk(renderer, scene, camera)
@@ -375,7 +375,7 @@ renderer.setAnimationLoop((ms) => {
   pumpkin.light.intensity = (3 + 4 * mood) * flicker
   glow.value = (0.6 + 0.6 * mood) * flicker
   pumpkin.flame.scale.y = 0.085 * (0.8 + 0.25 * flicker)
-  bloom.strength = THREE.MathUtils.lerp(0.5, 0.7, mood)
+  bloom.strength = THREE.MathUtils.lerp(0.6, 0.8, mood)
 
   updateWorld(t, mood)
   ink.update(t, mood)

@@ -155,7 +155,13 @@ def lathe(name, prof, m, c=(0, 0, 0), segs=32, parent=None, smooth=True, caps=Tr
 def tube(name, pts, radius, m, segs=8, parent=None):
     """tubo ao longo de pontos (em coordenadas do three); radius(t) com t de 0 a 1"""
     bm = bmesh.new()
-    pts = [V(*p) for p in pts]
+    tube_into(bm, [V(*p) for p in pts], radius, segs)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm, [m], parent, None, True)
+
+
+def tube_into(bm, pts, radius, segs=8):
+    """mesmo tubo, escrito num bmesh existente (pontos já em coordenadas do Blender)"""
     rings = []
     for k, p in enumerate(pts):
         t = k / (len(pts) - 1)
@@ -173,8 +179,40 @@ def tube(name, pts, radius, m, segs=8, parent=None):
             bm.faces.new((a[i], a[j], b[j], b[i]))
     bm.faces.new(list(reversed(rings[0])))
     bm.faces.new(rings[-1])
+
+
+def profile_mesh(name, pts, depth, m):
+    """contorno 2D (x, y do three) extrudado na profundidade z; devolve a malha para ser reaproveitada"""
+    bm = bmesh.new()
+    front = [bm.verts.new(V(x, y, depth / 2)) for x, y in pts]
+    back = [bm.verts.new(V(x, y, -depth / 2)) for x, y in pts]
+    bm.faces.new(front)
+    bm.faces.new(list(reversed(back)))
+    n = len(pts)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((front[j], front[i], back[i], back[j]))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return new_obj(name, bm, [m], parent, None, True)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    me.materials.append(m)
+    return me
+
+
+def gable(name, w, d, h, c, m, over=0.3, parent=None):
+    """telhado de duas águas com a cumeeira ao longo de x"""
+    bm = bmesh.new()
+    W, D = w / 2 + over, d / 2 + over
+    a = [bm.verts.new(V(x, -over * 0.6, z)) for x, z in ((-W, -D), (W, -D), (W, D), (-W, D))]
+    r = [bm.verts.new(V(x, h, 0)) for x in (-W, W)]
+    bm.faces.new((a[3], a[2], r[1], r[0]))
+    bm.faces.new((a[0], r[0], r[1], a[1]))
+    bm.faces.new((a[0], a[3], r[0]))
+    bm.faces.new((a[1], r[1], a[2]))
+    bm.faces.new((a[0], a[1], a[2], a[3]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm, [m], parent, V(*c))
 
 
 def quad(name, w, h, c, m, parent=None):
@@ -623,6 +661,165 @@ bulb = bmesh.new()
 bmesh.ops.create_uvsphere(bulb, u_segments=16, v_segments=12, radius=0.09)
 new_obj('LampBulb', bulb, [BULB], pivot, V(0, 3.24 - WALL_TOP, 0), True)
 empty('Lamp', V(0, 3.18 - WALL_TOP, 0), pivot)
+
+
+# ---------------------------------------------------------------- lá fora: colina, casa assombrada, cerca, lápides e árvores
+
+GROUND = mat('OutsideGround', '#3a2c3a', 1.0)
+HOUSE_WALL = mat('HouseWall', '#ffffff', 0.9)
+HOUSE_ROOF = mat('HouseRoof', '#ffffff', 0.85)
+HOUSE_TRIM = mat('HouseTrim', '#1e1612', 0.8)
+LIT = mat('HouseWindowLit', '#ffd27a', 0.6, emit='#ffb347', strength=5.0)
+FLICKER = mat('HouseWindowFlicker', '#ffd27a', 0.6, emit='#ffb347', strength=5.0)
+DARK_WIN = mat('HouseWindowDark', '#0c0806', 0.4)
+GRAVE = mat('Grave', '#7a7280', 0.95)
+
+
+def ground_y(x, z):
+    hill = 1.9 * math.exp(-((x + 2.4) ** 2 + (z + 35) ** 2) / 70)
+    return (-2.9 + 0.035 * (-z - 6) + 0.45 * math.sin(x * 0.17 + 1.1) * math.cos(z * 0.11) + hill
+            + 0.25 * noise.noise(Vector((x * 0.25, z * 0.25, 0.5))))
+
+
+bm = bmesh.new()
+nx, nz, gx0, gx1, gz0, gz1 = 64, 36, -32.0, 32.0, -5.4, -40.0
+grid = [[bm.verts.new(V(gx0 + (gx1 - gx0) * i / nx, 0, gz0 + (gz1 - gz0) * k / nz)) for i in range(nx + 1)] for k in range(nz + 1)]
+for row in grid:
+    for v in row:
+        x, z = v.co.x, -v.co.y
+        v.co.z = ground_y(x, z)
+for a, b in zip(grid, grid[1:]):
+    for i in range(nx):
+        bm.faces.new((a[i], b[i], b[i + 1], a[i + 1]))
+bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+ground = new_obj('OutsideGround', bm, [GROUND], smooth=True)
+if ground.data.polygons[0].normal.z < 0:
+    ground.data.flip_normals()
+
+# casa vitoriana (coordenadas locais: frente para +z, chão em y = 0)
+HX, HZ, HS = -2.4, -35.0, 0.52
+house = empty('HauntedHouse', V(HX, ground_y(HX, HZ) - 0.15, HZ))
+house.rotation_euler.z = 0.35
+house.scale = (HS, HS, HS)
+
+
+def hbox(name, w, h, d, c, m, bev=0.04, rot=None):
+    ob = box(name, w, h, d, c, m, bev=bev, segs=1, parent=house)
+    if rot:
+        ob.rotation_euler = rot
+    return ob
+
+
+def window(x, y, z, w, h, m, face=0.0, shutters=False):
+    q = quad('HouseWindow', w, h, (x, y, z), m, house)
+    q.rotation_euler.z = face
+    if face:
+        return
+    for sx in (-1, 1):
+        hbox('WindowTrim', 0.09, h + 0.18, 0.08, (x + sx * (w / 2 + 0.045), y, z), HOUSE_TRIM, 0.0)
+    for sy in (-1, 1):
+        hbox('WindowTrim', w + 0.27, 0.09, 0.1, (x, y + sy * (h / 2 + 0.045), z), HOUSE_TRIM, 0.0)
+    hbox('WindowCross', 0.05, h, 0.05, (x, y, z + 0.02), HOUSE_TRIM, 0.0)
+    hbox('WindowCross', w, 0.05, 0.05, (x, y + h * 0.1, z + 0.02), HOUSE_TRIM, 0.0)
+    if shutters:
+        hbox('Shutter', w * 0.5, h + 0.1, 0.06, (x - w * 0.8, y, z), HOUSE_TRIM, 0.01)
+        hbox('Shutter', w * 0.5, h + 0.1, 0.06, (x + w * 0.85, y - 0.12, z + 0.05), HOUSE_TRIM, 0.01, (0, 0, -0.35))
+
+
+hbox('HouseFoundation', 6.3, 0.6, 4.3, (0, 0.3, 0), STONE)
+hbox('HouseFloor1', 6.0, 2.6, 4.0, (0, 1.9, 0), HOUSE_WALL)
+hbox('HouseFloor2', 6.3, 2.4, 4.3, (0, 4.4, 0), HOUSE_WALL)
+hbox('HouseBelt', 6.5, 0.14, 4.5, (0, 3.2, 0), HOUSE_TRIM, 0.02)
+gable('HouseRoof', 6.3, 4.3, 2.9, (0, 5.6, 0), HOUSE_ROOF, 0.35, house)
+hbox('Dormer', 1.6, 1.5, 1.6, (1.4, 6.1, 1.3), HOUSE_WALL)
+dm = gable('DormerRoof', 1.6, 1.6, 0.9, (1.4, 6.85, 1.45), HOUSE_ROOF, 0.15, house)
+dm.rotation_euler.z = math.pi / 2
+hbox('Chimney', 0.7, 3.2, 0.7, (2.3, 7.4, -0.9), STONE, 0.03, (0.04, 0, 0.07))
+hbox('ChimneyCap', 0.95, 0.18, 0.95, (2.43, 9.0, -0.83), STONE, 0.02, (0.04, 0, 0.07))
+
+tower = empty('HouseTower', V(-3.3, 0, 1.5), house)
+tower.rotation_euler.y = -0.05
+lathe('TowerBody', [(0, 0.3), (1.1, 0.3), (1.1, 7.6), (0, 7.6)], HOUSE_WALL, (0, 0, 0), 8, tower, smooth=False).rotation_euler.z = math.pi / 8
+lathe('TowerBelt', [(0, 5.35), (1.22, 5.35), (1.22, 5.55), (0, 5.55)], HOUSE_TRIM, (0, 0, 0), 8, tower, smooth=False).rotation_euler.z = math.pi / 8
+lathe('TowerRoof', [(0, 7.45), (1.55, 7.45), (1.45, 7.7), (0, 11.2)], HOUSE_ROOF, (0, 0, 0), 8, tower, smooth=False).rotation_euler.z = math.pi / 8
+lathe('TowerSpire', [(0, 11.1), (0.07, 11.1), (0.025, 12.3), (0, 12.3)], IRON, (0, 0, 0), 8, tower)
+for y, m in ((3.0, LIT), (6.3, FLICKER)):
+    q = quad('HouseWindow', 0.45, 1.0, (0, y, 1.03), m, tower)
+
+hbox('Porch', 3.2, 0.22, 1.7, (0.6, 0.62, 2.85), HOUSE_TRIM, 0.02)
+for x in (-0.85, 2.05):
+    hbox('PorchPost', 0.13, 2.0, 0.13, (x, 1.7, 3.55), HOUSE_TRIM, 0.0)
+hbox('PorchRoof', 3.5, 0.12, 2.0, (0.6, 2.75, 2.95), HOUSE_ROOF, 0.0, (0.28, 0, 0))
+hbox('Door', 0.95, 1.7, 0.06, (0.6, 1.6, 2.02), DARK_WIN, 0.0)
+
+window(-1.7, 1.9, 2.02, 0.8, 1.1, LIT, shutters=True)
+window(2.3, 1.9, 2.02, 0.8, 1.1, DARK_WIN)
+window(-1.4, 4.4, 2.17, 0.8, 1.1, DARK_WIN, shutters=True)
+window(1.4, 4.4, 2.17, 0.8, 1.1, LIT)
+window(1.4, 6.05, 2.11, 0.55, 0.65, FLICKER)
+q = quad('HouseWindow', 0.8, 1.1, (-3.01, 1.9, -1.1), DARK_WIN, house)
+q.rotation_euler.z = -math.pi / 2
+q = quad('HouseWindow', 0.8, 1.1, (-3.16, 4.4, -1.1), LIT, house)
+q.rotation_euler.z = -math.pi / 2
+
+# cerca torta
+picket = profile_mesh('Picket', [(-0.06, 0), (0.06, 0), (0.06, 0.95), (0, 1.1), (-0.06, 0.95)], 0.05, DARK)
+for k in range(26):
+    if k in (7, 15, 16):
+        continue
+    x = -7.6 + k * 0.32
+    z = -29.0 + 0.15 * math.sin(k * 0.7)
+    p = link('Picket', picket, V(x, ground_y(x, z) - 0.15, z))
+    p.rotation_euler = (random.uniform(-0.12, 0.12), 0, random.uniform(-0.1, 0.1))
+for y in (0.35, 0.8):
+    rail = box('FenceRail', 8.4, 0.07, 0.05, (-3.6, ground_y(-3.6, -29.0) + y - 0.15, -29.06), DARK)
+    rail.rotation_euler.y = 0.04
+
+# lápides
+arch = [(-0.3, 0), (0.3, 0), (0.3, 0.55)] + [(0.3 * math.cos(a), 0.55 + 0.3 * math.sin(a)) for a in [math.pi * i / 10 for i in range(1, 10)]] + [(-0.3, 0.55)]
+stone_me = profile_mesh('Headstone', arch, 0.14, GRAVE)
+for x, z, s, lean in ((1.9, -27.4, 1.0, 0.12), (2.8, -28.3, 0.85, -0.18), (3.7, -27.1, 1.1, 0.05), (4.6, -28.8, 0.8, 0.25)):
+    g = link('Headstone', stone_me, V(x, ground_y(x, z) - 0.12, z))
+    g.scale = (s, s, s)
+    g.rotation_euler = (0, lean, random.uniform(-0.3, 0.3))
+cross = box('GraveCross', 0.12, 1.1, 0.1, (2.3, ground_y(2.3, -29.6) + 0.4, -29.6), GRAVE)
+cross.rotation_euler.y = -0.15
+box('GraveCross', 0.55, 0.11, 0.1, (0, 0.25, 0), GRAVE, parent=cross)
+
+
+def dead_tree(name, x, z, height, seed, lean=(0.0, 0.0)):
+    rnd = random.Random(seed)
+    bm = bmesh.new()
+
+    def branch(p, d, length, r, depth):
+        pts = [p.copy()]
+        q, dd = p.copy(), d.copy()
+        for _ in range(4):
+            dd = (dd + Vector((rnd.uniform(-0.3, 0.3), rnd.uniform(-0.3, 0.3), rnd.uniform(-0.1, 0.15)))).normalized()
+            q = q + dd * (length / 4)
+            pts.append(q.copy())
+        tube_into(bm, pts, lambda t: r * (1 - 0.55 * t), 6 if depth > 2 else 4)
+        if depth == 0:
+            return
+        for i in range(3 if rnd.random() < 0.35 else 2):
+            nd = (dd + Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(0.2, 0.8))) * 0.85).normalized()
+            start = pts[-1] if i == 0 else pts[rnd.randint(2, 3)]
+            branch(start, nd, length * rnd.uniform(0.55, 0.75), r * 0.55, depth - 1)
+
+    branch(V(x, ground_y(x, z) - 0.3, z), Vector((lean[0], lean[1], 1)).normalized(), height * 0.42, height * 0.045, 5)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return new_obj(name, bm, [BARK], smooth=True)
+
+
+dead_tree('DeadTree', 5.9, -35.0, 7.0, 3, (0.15, 0.05))
+dead_tree('DeadTree', -6.4, -26.5, 4.2, 8, (-0.2, 0.0))
+dead_tree('DeadTree', 10.5, -30.0, 5.0, 12, (0.1, -0.1))
+empty('BatsMoon', V(5.0, 6.2, -37))
+empty('BatsTower', V(-3.6, 5.0, -33))
+
+for ob in list(house.children_recursive):
+    if ob.type == 'MESH' and ob.data.materials and ob.data.materials[0] in (HOUSE_WALL, HOUSE_ROOF, STONE):
+        world_uv(ob)
 
 
 # ---------------------------------------------------------------- exportar

@@ -659,6 +659,41 @@ button:focus-visible {
   .round { width: 46px; height: 46px; }
 }
 
+/* tablets e celular deitado: a barra completa não cabe, fica só com ícones */
+@media (min-width: 641px) and (max-width: 1100px) {
+  .toolbar { gap: 8px; }
+  .toolbar button span { display: none; }
+  .toolbar button { padding: 0 10px; }
+  .size input { width: 96px; }
+}
+
+/* telas baixas (celular deitado): tudo mais compacto para sobrar espaço para a abóbora */
+@media (max-height: 500px) {
+  .brand { top: max(10px, env(safe-area-inset-top)); }
+  .brand h1 { font-size: 32px; }
+  .brand p { display: none; }
+  .corner { top: max(10px, env(safe-area-inset-top)); gap: 8px; }
+  .round { width: 40px; height: 40px; }
+  .toolbar { bottom: max(8px, env(safe-area-inset-bottom)); padding: 4px; }
+  .toolbar button { height: 38px; min-width: 38px; }
+  .hint { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 58px); font-size: 12px; padding: 5px 12px; }
+  .stencils, .costume, .cutbar { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 58px); }
+  .stencil canvas { width: 52px; height: 52px; }
+  .chip { padding: 4px 4px 3px; }
+  .chip svg { width: 26px; height: 26px; }
+}
+
+/* celular pequeno: o subtítulo quebra antes de encostar nos botões do canto */
+@media (max-width: 640px) {
+  .brand { max-width: calc(100vw - 196px); }
+}
+
+@media (max-width: 400px) {
+  .round { width: 40px; height: 40px; }
+  .corner { gap: 6px; }
+  .brand h1 { font-size: 36px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .brand h1, .toolbar, .hint, .stencils, .cutbar, .loader, .loader::before, .loader::after, .leader, .wave { animation: none; }
   .ready .loader { animation: none; visibility: hidden; }

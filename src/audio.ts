@@ -1,18 +1,18 @@
 // todo o som é sintetizado com Web Audio: nada de arquivos para baixar
 
 const KEY = 'abobora-mudo'
-const VOLUME = 0.5
+const VOLUME = 0.6
 let ctx: AudioContext | null = null
 let master: GainNode
 let noise: AudioBuffer
 let muted = (() => {
   try {
-    return localStorage.getItem(KEY) === '1'
+    return localStorage.getItem(KEY) !== '0'
   } catch {
-    return false
+    return true
   }
 })()
-let scrape: { gain: GainNode; filter: BiquadFilterNode } | null = null
+let lastGrain = 0
 
 function noiseSource(loop = true) {
   const src = ctx!.createBufferSource()
@@ -63,9 +63,11 @@ function ambience() {
       hp.type = 'highpass'
       hp.frequency.value = 1200 + Math.random() * 2500
       const g = c.createGain()
-      envelope(g.gain, t + i * 0.04 + Math.random() * 0.05, 0.05 + Math.random() * 0.1, 0.002, 0.03 + Math.random() * 0.05)
+      const at = t + i * 0.04 + Math.random() * 0.05
+      g.gain.value = 0
+      envelope(g.gain, at, 0.02 + Math.random() * 0.04, 0.002, 0.03 + Math.random() * 0.05)
       s.connect(hp).connect(g).connect(master)
-      s.start(t, Math.random() * 1.5, 0.2)
+      s.start(at, Math.random() * 1.5, 0.15)
     }
     setTimeout(crackle, 150 + Math.random() * 900)
   }
@@ -139,44 +141,28 @@ export const audio = {
     }
     if (ctx) master.gain.setTargetAtTime(m ? 0 : VOLUME, ctx.currentTime, 0.1)
   },
-  /** faca/raspador arrastando na casca; speed ~ quanto o cursor andou */
+  /** faca/raspador arrastando na casca: estalinhos crocantes da lâmina na polpa, no ritmo do movimento */
   scrape(speed: number, shave: boolean) {
     if (!ready()) return
-    const c = ctx!
-    if (!scrape) {
-      const s = noiseSource()
-      const filter = c.createBiquadFilter()
-      filter.type = 'bandpass'
-      const gain = c.createGain()
-      gain.gain.value = 0
-      s.connect(filter).connect(gain).connect(master)
-      s.start()
-      scrape = { gain, filter }
+    const t = ctx!.currentTime
+    const v = Math.min(speed, 1)
+    if (t - lastGrain < (shave ? 0.05 : 0.07) - v * 0.035) return
+    lastGrain = t
+    if (shave) grain(t, 2200 + Math.random() * 1800, 0.035 + v * 0.03, 0.025)
+    else {
+      grain(t, 700 + Math.random() * 900, 0.09 + v * 0.08, 0.04 + Math.random() * 0.03)
+      // a polpa úmida cedendo, um pouco depois e mais grave
+      if (Math.random() < 0.5) grain(t + 0.015, 260 + Math.random() * 160, 0.1 + v * 0.06, 0.08, 0.7)
     }
-    const t = c.currentTime
-    scrape.filter.frequency.setTargetAtTime(shave ? 3200 : 1500 + Math.min(speed, 1) * 900, t, 0.03)
-    scrape.filter.Q.value = shave ? 1.5 : 2.5
-    scrape.gain.gain.setTargetAtTime(Math.min(0.13, 0.03 + speed * 0.2) * (shave ? 0.6 : 1), t, 0.03)
   },
-  stopScrape() {
-    if (scrape && ctx) scrape.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.06)
-  },
-  /** corte reto concluído: lâmina atravessando e o pedaço soltando */
+  stopScrape() {},
+  /** corte reto concluído: a lâmina atravessando em vários "crecs" e o pedaço soltando */
   slice() {
     if (!ready()) return
-    const c = ctx!
-    const t = c.currentTime
-    const s = noiseSource(false)
-    const f = c.createBiquadFilter()
-    f.type = 'bandpass'
-    f.Q.value = 3
-    f.frequency.setValueAtTime(3000, t)
-    f.frequency.exponentialRampToValueAtTime(500, t + 0.25)
-    const g = c.createGain()
-    envelope(g.gain, t, 0.18, 0.02, 0.3)
-    s.connect(f).connect(g).connect(master)
-    s.start(t, 0, 0.4)
-    thump(t + 0.12, 140, 0.25)
+    const t = ctx!.currentTime
+    for (let i = 0; i < 6; i++) grain(t + i * 0.035 + Math.random() * 0.01, 1100 - i * 120 + Math.random() * 200, 0.09, 0.05)
+    grain(t + 0.2, 300, 0.1, 0.12, 0.7)
+    thump(t + 0.24, 140, 0.25)
   },
   /** tampa saindo: "pop" de rolha */
   pop() {
@@ -265,6 +251,21 @@ export const audio = {
     }
   },
 
+}
+
+/** pedacinho de ruído filtrado com ataque rápido: um "crec" */
+function grain(t: number, freq: number, peak: number, len: number, q = 1.3) {
+  const c = ctx!
+  const s = noiseSource(false)
+  const f = c.createBiquadFilter()
+  f.type = 'bandpass'
+  f.frequency.value = freq
+  f.Q.value = q
+  const g = c.createGain()
+  g.gain.value = 0
+  envelope(g.gain, t, peak, 0.003, len)
+  s.connect(f).connect(g).connect(master)
+  s.start(t, Math.random() * 1.5, len + 0.05)
 }
 
 function thump(t: number, from: number, len: number, to = 60, attack = 0.005) {

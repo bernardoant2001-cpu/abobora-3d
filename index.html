@@ -42,6 +42,54 @@
       <button id="photo" class="round paper" title="Salvar foto" aria-label="Salvar foto">
         <svg viewBox="0 0 24 24"><path d="M3 8.5h3.5l2-3h7l2 3H21V19H3z" /><circle cx="12" cy="13.3" r="3.6" /></svg>
       </button>
+      <button id="gallery" class="round paper" title="Exposição de abóboras" aria-label="Exposição de abóboras">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="1.5" /><rect x="7" y="7" width="10" height="10" /><path d="m7 15 3-3 2 2 1.5-1.5L17 16" /></svg>
+      </button>
+    </div>
+
+    <div id="viewing" class="viewing paper" hidden>
+      <span>Obra de <strong id="viewing-name"></strong></span>
+      <button id="viewing-back">Voltar à minha abóbora</button>
+    </div>
+
+    <div id="expo" class="expo" hidden>
+      <section class="expo-panel paper" role="dialog" aria-modal="true" aria-labelledby="expo-title">
+        <header class="expo-head">
+          <div>
+            <h2 id="expo-title">Exposição</h2>
+            <p>Abóboras esculpidas por quem passou por aqui</p>
+          </div>
+          <div class="expo-actions">
+            <button id="expo-open-form" class="primary">Expor a minha</button>
+            <button id="expo-close" class="icon" aria-label="Fechar a exposição">
+              <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+            </button>
+          </div>
+        </header>
+
+        <div id="expo-send" class="expo-send" hidden>
+          <img id="expo-preview" alt="Prévia da sua abóbora" width="160" height="200" />
+          <div class="expo-send-body">
+            <h3>Expor a sua abóbora</h3>
+            <form id="expo-form">
+              <label for="expo-name">Seu nome</label>
+              <input id="expo-name" maxlength="24" autocomplete="nickname" required />
+              <input name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true" />
+              <p class="fine">Sua abóbora e seu nome ficam públicos na exposição depois de aprovados.</p>
+              <div class="expo-buttons">
+                <button id="expo-submit" class="primary" type="submit">Enviar</button>
+              </div>
+            </form>
+            <p id="expo-message" class="expo-message" role="status"></p>
+          </div>
+          <button id="expo-cancel" class="icon" type="button" aria-label="Fechar o envio">
+            <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+
+        <p id="expo-status" class="expo-status" role="status"></p>
+        <div id="expo-grid" class="expo-grid"></div>
+      </section>
     </div>
 
     <p id="hint" class="hint paper">Arraste sobre a abóbora para esculpir <span>·</span> arraste fora dela para girar</p>

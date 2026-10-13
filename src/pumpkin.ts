@@ -201,6 +201,30 @@ export class Carver {
     this.replace(() => {})
   }
 
+  /** desenho do corte em meia resolução (PNG), para enviar à exposição */
+  exportMask() {
+    const c = document.createElement('canvas')
+    c.width = MASK_W / 2
+    c.height = MASK_H / 2
+    c.getContext('2d')!.drawImage(this.canvas, 0, 0, c.width, c.height)
+    return c.toDataURL('image/png')
+  }
+
+  /** cópia do desenho atual, para voltar depois de visitar a exposição */
+  saveState() {
+    const c = document.createElement('canvas')
+    c.width = MASK_W
+    c.height = MASK_H
+    c.getContext('2d')!.drawImage(this.canvas, 0, 0)
+    return c
+  }
+
+  restoreState(saved: CanvasImageSource) {
+    this.cancelPolygon()
+    this.ctx.drawImage(saved, 0, 0, MASK_W, MASK_H)
+    this.dirty = true
+  }
+
   stencil(s: Stencil) {
     this.replace((ctx) => {
       const path = (pts: Pt[], color: string) => {

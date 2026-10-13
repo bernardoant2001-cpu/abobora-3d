@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Exposição · moderação</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root { --ink: #1a0f06; --paper: #ead39c; --muted: #5a3e1e; color-scheme: light; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: #2a170a; color: var(--ink); font: 15px/1.4 'Courier New', monospace; }
+      main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+      h1 { margin: 0 0 4px; color: var(--paper); font-size: 28px; }
+      .sub { margin: 0 0 20px; color: #c9a86a; }
+      .box { background: var(--paper); border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 4px 5px 0 #0a0602; padding: 16px; }
+      form.login { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      input { height: 40px; padding: 0 12px; border: 2px solid var(--ink); border-radius: 10px; font: inherit; min-width: 260px; flex: 1; }
+      button { height: 38px; padding: 0 14px; border: 2px solid var(--ink); border-radius: 10px; background: #fff3d1; color: var(--ink); font: inherit; cursor: pointer; }
+      button.dark { background: var(--ink); color: var(--paper); }
+      button.danger { border-color: #8c1c24; color: #8c1c24; }
+      button[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
+      button:disabled { opacity: 0.4; cursor: default; }
+      .tabs { display: flex; gap: 8px; margin: 18px 0 12px; }
+      .status { color: var(--paper); margin: 8px 0 14px; min-height: 1.4em; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+      .card { background: var(--paper); border: 2.5px solid var(--ink); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+      .card img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; border: 5px solid #2a170a; background: #1a0f06; }
+      .name { font-size: 17px; font-weight: bold; word-break: break-word; }
+      .meta { font-size: 12px; color: var(--muted); }
+      .actions { display: flex; gap: 6px; }
+      .actions button { flex: 1; }
+      .push { margin-left: auto; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Exposição · moderação</h1>
+      <p class="sub">Aprove as abóboras para elas aparecerem no site. Recusar apaga a abóbora de vez.</p>
+
+      <form class="login box" id="login">
+        <input id="token" type="password" placeholder="Senha de administração (ADMIN_TOKEN)" autocomplete="current-password" required />
+        <button class="dark">Entrar</button>
+      </form>
+
+      <section id="panel" hidden>
+        <div class="tabs">
+          <button data-status="pending" aria-pressed="true">Aguardando aprovação</button>
+          <button data-status="approved" aria-pressed="false">Na exposição</button>
+          <button id="logout" class="push">Sair</button>
+        </div>
+        <p class="status" id="status" role="status"></p>
+        <div class="grid" id="grid"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

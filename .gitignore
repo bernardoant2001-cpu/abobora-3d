@@ -10,3 +10,5 @@ blender/*.glb
 dist
 node_modules
 divulgacao
+
+.env*

@@ -15,6 +15,7 @@ import { createSurprises } from './surprises'
 import { flicker } from './flame'
 import { audio } from './audio'
 import { STENCILS, thumbnail } from './stencils'
+import { createGallery } from './gallery'
 
 const $ = <T extends HTMLElement>(s: string) => document.querySelector<T>(s)!
 const canvas = $<HTMLCanvasElement>('#scene')
@@ -216,7 +217,8 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return
   canvas.setPointerCapture(e.pointerId)
   intro = 1
-  const hit = tool === 'cut' ? undefined : pick(e)
+  // visitando a abóbora de alguém: só dá para girar, não esculpir
+  const hit = tool === 'cut' || gallery.viewing ? undefined : pick(e)
   if (hit) {
     carving = e.pointerId
     lastBrush = null
@@ -438,10 +440,22 @@ function chip(label: string, icon: string, onPick: () => void) {
   })
   return b
 }
+// formato e acessório atuais (a exposição guarda e restaura)
+const look: { shape: string; accessory: string | null } = { shape: 'Redonda', accessory: null }
+function applyLook(shape: string, accessory: string | null) {
+  look.shape = shape
+  look.accessory = accessory
+  pumpkin.setShape(shape)
+  pumpkin.setAccessory(accessory)
+  shapesRow.querySelectorAll('.chip').forEach((c, i) => c.setAttribute('aria-pressed', String(pumpkin.shapes[i] === shape)))
+  accsRow.querySelectorAll('.chip').forEach((c, i) => c.setAttribute('aria-pressed', String(ACCESSORIES[i][0] === accessory)))
+}
+
 const shapesRow = $('#shapes')
 for (const name of pumpkin.shapes) {
   shapesRow.append(
     chip(SHAPE_LABELS[name] ?? name, SHAPE_ICONS[name] ?? SHAPE_ICONS.Redonda, () => {
+      look.shape = name
       pumpkin.setShape(name)
       audio.pop()
     }),
@@ -451,6 +465,7 @@ const accsRow = $('#accs')
 for (const [name, label, icon] of ACCESSORIES) {
   accsRow.append(
     chip(label, icon, () => {
+      look.accessory = name
       pumpkin.setAccessory(name)
       if (name) audio.pop()
     }),
@@ -501,6 +516,56 @@ $('#photo').addEventListener('click', () => {
   a.download = 'minha-abobora.png'
   a.click()
   cursor.visible = wasVisible
+})
+
+// ---------- exposição ----------
+
+/** miniatura 4:5 enquadrada na abóbora (com chapéu), em JPEG */
+function captureThumb() {
+  const wasVisible = cursor.visible
+  cursor.visible = false
+  render()
+  cursor.visible = wasVisible
+  const c = pumpkin.collider({ center: new THREE.Vector3(), radius: 0, height: 0 })
+  const top = new THREE.Vector3(c.center.x, Math.max(pumpkin.top(), c.center.y + c.height), c.center.z).project(camera)
+  const bottom = new THREE.Vector3(c.center.x, c.center.y - c.height, c.center.z).project(camera)
+  const W = canvas.width
+  const H = canvas.height
+  const y0 = ((1 - top.y) / 2) * H
+  const y1 = ((1 - bottom.y) / 2) * H
+  const h = Math.min(H, (y1 - y0) * 1.35)
+  const w = Math.min(W, h * 0.8)
+  const cx = ((c.center.clone().project(camera).x + 1) / 2) * W
+  const sx = THREE.MathUtils.clamp(cx - w / 2, 0, W - w)
+  const sy = THREE.MathUtils.clamp((y0 + y1) / 2 - h / 2, 0, H - h)
+  const out = document.createElement('canvas')
+  out.width = 480
+  out.height = 600
+  out.getContext('2d')!.drawImage(canvas, sx, sy, w, h, 0, 0, 480, 600)
+  return out.toDataURL('image/jpeg', 0.82)
+}
+
+let mine: { mask: HTMLCanvasElement; shape: string; accessory: string | null } | null = null
+const gallery = createGallery({
+  capture: captureThumb,
+  exportMask: () => carver.exportMask(),
+  current: () => ({ ...look }),
+  hasCarving: () => carver.carvedFraction() > 0.002,
+  view(entry, mask) {
+    if (!mine) mine = { mask: carver.saveState(), shape: look.shape, accessory: look.accessory }
+    if (tool === 'cut') setTool('carve')
+    carver.restoreState(mask)
+    applyLook(entry.shape, entry.accessory)
+    spinVel = 0
+    pumpkin.outer.rotation.y = 0
+    audio.pop()
+  },
+  back() {
+    if (!mine) return
+    carver.restoreState(mine.mask)
+    applyLook(mine.shape, mine.accessory)
+    mine = null
+  },
 })
 
 // ---------- loop ----------

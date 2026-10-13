@@ -549,15 +549,15 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-        totalEmissiveRadiance += vec3( 1.0, 0.55, 0.15 ) * rim * ( 1.0 - ink ) * uGlow + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;
+        totalEmissiveRadiance += vec3( 0.9, 0.5, 0.14 ) * rim * ( 1.0 - ink ) * uGlow * 0.7 + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;
         totalEmissiveRadiance += vec3( 0.85, 0.38, 0.08 ) * shave * uGlow * 0.3;
-        totalEmissiveRadiance += wallColor * wallHit * ( 0.3 + 0.7 * wallDepth ) * uGlow;`,
+        totalEmissiveRadiance += wallColor * wallHit * ( 0.2 + 0.35 * wallDepth ) * uGlow;`,
       )
   }
 
   // parede interna: frente = polpa (espessura do corte), verso = interior iluminado pela vela
   const flesh = new THREE.MeshStandardMaterial({
-    color: '#ff9a2e',
+    color: '#d9661a',
     roughness: 0.9,
     side: THREE.DoubleSide,
     alphaMap: carver.texture,
@@ -577,7 +577,7 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-        totalEmissiveRadiance += ( gl_FrontFacing ? vec3( 0.5, 0.26, 0.07 ) : vec3( 1.0, 0.38, 0.05 ) * 0.8 ) * uGlow;`,
+        totalEmissiveRadiance += ( gl_FrontFacing ? vec3( 0.3, 0.13, 0.03 ) : vec3( 0.75, 0.24, 0.03 ) * 0.3 ) * uGlow;`,
       )
   }
 

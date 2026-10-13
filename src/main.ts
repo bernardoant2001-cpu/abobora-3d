@@ -760,14 +760,14 @@ renderer.setAnimationLoop((ms) => {
 
   // vela da abóbora: tremula, muda de tom e balança um pouco, fazendo o rosto projetado dançar
   const f = flicker(t, 1)
-  pumpkin.light.intensity = (6 + 6 * mood) * f * boost
+  pumpkin.light.intensity = (3.4 + 3.6 * mood) * f * boost
   pumpkin.light.color.copy(warm).lerp(hot, (f - 0.72) / 0.28)
   pumpkin.light.position.set(
     pumpkin.baseLight.x + (flicker(t * 1.4, 2) - 0.86) * 0.07,
     pumpkin.baseLight.y + (flicker(t * 1.1, 3) - 0.86) * 0.04,
     pumpkin.baseLight.z + (flicker(t * 1.3, 4) - 0.86) * 0.07,
   )
-  glow.value = Math.min(1.1, (0.6 + 0.3 * mood) * f * boost)
+  glow.value = Math.min(0.95, (0.6 + 0.3 * mood) * f * boost)
   lean += (THREE.MathUtils.clamp(-spinVel * 5, -0.3, 0.3) - lean) * (1 - Math.exp(-dt * 6))
   pumpkin.flame.update(t, f * 1.1, lean)
   bloom.strength = THREE.MathUtils.lerp(0.6, 0.8, mood)

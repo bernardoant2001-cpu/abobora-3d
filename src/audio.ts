@@ -1,6 +1,7 @@
 // todo o som é sintetizado com Web Audio: nada de arquivos para baixar
 
 const KEY = 'abobora-mudo'
+const VOLUME = 0.5
 let ctx: AudioContext | null = null
 let master: GainNode
 let noise: AudioBuffer
@@ -112,8 +113,18 @@ export const audio = {
     }
     ctx = new AudioContext()
     master = ctx.createGain()
-    master.gain.value = muted ? 0 : 0.8
-    master.connect(ctx.destination)
+    master.gain.value = muted ? 0 : VOLUME
+    // limitador e um corte nos agudos: nada estoura nem fica estridente, mesmo com vários sons juntos
+    const soft = ctx.createBiquadFilter()
+    soft.type = 'lowpass'
+    soft.frequency.value = 7000
+    const limiter = ctx.createDynamicsCompressor()
+    limiter.threshold.value = -18
+    limiter.knee.value = 12
+    limiter.ratio.value = 8
+    limiter.attack.value = 0.003
+    limiter.release.value = 0.25
+    master.connect(soft).connect(limiter).connect(ctx.destination)
     noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate)
     const d = noise.getChannelData(0)
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
@@ -126,7 +137,7 @@ export const audio = {
     } catch {
       /* sem armazenamento: vale só nesta visita */
     }
-    if (ctx) master.gain.setTargetAtTime(m ? 0 : 0.8, ctx.currentTime, 0.1)
+    if (ctx) master.gain.setTargetAtTime(m ? 0 : VOLUME, ctx.currentTime, 0.1)
   },
   /** faca/raspador arrastando na casca; speed ~ quanto o cursor andou */
   scrape(speed: number, shave: boolean) {
@@ -145,7 +156,7 @@ export const audio = {
     const t = c.currentTime
     scrape.filter.frequency.setTargetAtTime(shave ? 3200 : 1500 + Math.min(speed, 1) * 900, t, 0.03)
     scrape.filter.Q.value = shave ? 1.5 : 2.5
-    scrape.gain.gain.setTargetAtTime(Math.min(0.28, 0.06 + speed * 0.4) * (shave ? 0.6 : 1), t, 0.03)
+    scrape.gain.gain.setTargetAtTime(Math.min(0.13, 0.03 + speed * 0.2) * (shave ? 0.6 : 1), t, 0.03)
   },
   stopScrape() {
     if (scrape && ctx) scrape.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.06)
@@ -162,7 +173,7 @@ export const audio = {
     f.frequency.setValueAtTime(3000, t)
     f.frequency.exponentialRampToValueAtTime(500, t + 0.25)
     const g = c.createGain()
-    envelope(g.gain, t, 0.35, 0.01, 0.3)
+    envelope(g.gain, t, 0.18, 0.02, 0.3)
     s.connect(f).connect(g).connect(master)
     s.start(t, 0, 0.4)
     thump(t + 0.12, 140, 0.25)
@@ -181,7 +192,7 @@ export const audio = {
     const o = c.createOscillator()
     o.frequency.value = 1800 + Math.random() * 1400
     const g = c.createGain()
-    envelope(g.gain, t, 0.04, 0.001, 0.04)
+    envelope(g.gain, t, 0.025, 0.002, 0.04)
     o.connect(g).connect(master)
     o.start(t)
     o.stop(t + 0.06)
@@ -245,7 +256,7 @@ export const audio = {
       f2.frequency.value = 1250
       f2.Q.value = 6
       const g = c.createGain()
-      envelope(g.gain, t, 0.22, 0.015, 0.12)
+      envelope(g.gain, t, 0.11, 0.02, 0.12)
       o.connect(f1).connect(g)
       o.connect(f2).connect(g)
       g.connect(master)
@@ -263,7 +274,7 @@ function thump(t: number, from: number, len: number, to = 60, attack = 0.005) {
   o.frequency.setValueAtTime(from, t)
   o.frequency.exponentialRampToValueAtTime(to, t + len)
   const g = c.createGain()
-  envelope(g.gain, t, 0.3, attack, len)
+  envelope(g.gain, t, 0.17, attack, len)
   o.connect(g).connect(master)
   o.start(t)
   o.stop(t + len + 0.05)

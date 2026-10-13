@@ -167,45 +167,100 @@ function stars() {
   )
 }
 
-/** morcegos batendo asas em volta de um ponto */
+/** morcegos de silhueta: asa em duas partes (braço + mão com "dedos"), dobrando no pulso */
 function bats(centers: THREE.Vector3[]) {
-  const s = new THREE.Shape()
-  s.moveTo(0, 0.06)
-  s.quadraticCurveTo(0.25, 0.22, 0.62, 0.16)
-  s.quadraticCurveTo(0.5, 0.06, 0.52, -0.06)
-  s.quadraticCurveTo(0.42, 0.02, 0.36, -0.08)
-  s.quadraticCurveTo(0.27, -0.01, 0.2, -0.1)
-  s.quadraticCurveTo(0.12, -0.02, 0, -0.04)
-  const wingGeo = new THREE.ShapeGeometry(s)
-  wingGeo.rotateX(-Math.PI / 2)
-  const mat = new THREE.MeshBasicMaterial({ color: '#0b0614', side: THREE.DoubleSide })
-  const bodyGeo = new THREE.SphereGeometry(1, 8, 6)
+  const ink = new THREE.MeshBasicMaterial({ color: '#07040c', side: THREE.DoubleSide, fog: false })
+
+  // parte interna da asa: do ombro até o pulso
+  const arm = new THREE.Shape()
+  arm.moveTo(0, 0.05)
+  arm.quadraticCurveTo(0.14, 0.13, 0.3, 0.1)
+  arm.lineTo(0.3, -0.02)
+  arm.quadraticCurveTo(0.2, -0.06, 0.12, -0.03)
+  arm.quadraticCurveTo(0.06, -0.08, 0, -0.06)
+  // parte externa: do pulso até a ponta, com a borda recortada entre os dedos
+  const hand = new THREE.Shape()
+  hand.moveTo(0, 0.1)
+  hand.quadraticCurveTo(0.2, 0.16, 0.42, 0.06)
+  hand.quadraticCurveTo(0.33, 0.02, 0.33, -0.05)
+  hand.quadraticCurveTo(0.26, -0.01, 0.22, -0.09)
+  hand.quadraticCurveTo(0.15, -0.04, 0.1, -0.1)
+  hand.quadraticCurveTo(0.05, -0.04, 0, -0.02)
+  const armGeo = new THREE.ShapeGeometry(arm, 8).rotateX(-Math.PI / 2)
+  const handGeo = new THREE.ShapeGeometry(hand, 8).rotateX(-Math.PI / 2)
+
+  const bodyGeo = new THREE.SphereGeometry(1, 10, 8)
+  const earGeo = new THREE.ConeGeometry(0.025, 0.06, 4)
+
+  const make = () => {
+    const bat = new THREE.Group()
+    const body = new THREE.Mesh(bodyGeo, ink)
+    body.scale.set(0.055, 0.05, 0.11)
+    const head = new THREE.Mesh(bodyGeo, ink)
+    head.scale.setScalar(0.042)
+    head.position.set(0, 0.015, 0.1)
+    bat.add(body, head)
+    for (const s of [-1, 1]) {
+      const ear = new THREE.Mesh(earGeo, ink)
+      ear.position.set(s * 0.022, 0.06, 0.1)
+      ear.rotation.z = -s * 0.3
+      bat.add(ear)
+    }
+    const wings = [-1, 1].map((s) => {
+      const shoulder = new THREE.Group()
+      shoulder.scale.x = s
+      shoulder.position.set(s * 0.03, 0.01, 0.02)
+      shoulder.add(new THREE.Mesh(armGeo, ink))
+      const wrist = new THREE.Group()
+      wrist.position.x = 0.3
+      wrist.add(new THREE.Mesh(handGeo, ink))
+      shoulder.add(wrist)
+      bat.add(shoulder)
+      return { shoulder, wrist }
+    })
+    bat.traverse((o) => o.layers.set(FX))
+    return { bat, wings }
+  }
+
+  const rand = rng(77)
+  // cada morcego com rota própria: oito em volta do centro, altura e velocidade diferentes
   const flock = centers.flatMap((c, ci) =>
-    [0, 1, 2].map((i) => {
-      const bat = new THREE.Group()
-      const body = new THREE.Mesh(bodyGeo, mat)
-      body.scale.set(0.07, 0.06, 0.13)
-      const right = new THREE.Mesh(wingGeo, mat)
-      const left = new THREE.Mesh(wingGeo, mat)
-      left.scale.x = -1
-      bat.add(body, right, left)
-      bat.scale.setScalar(1.6)
-      return { bat, right, left, c, r: 2.2 + i * 1.1, speed: 0.35 + i * 0.12 + ci * 0.05, phase: i * 2.1 + ci }
+    Array.from({ length: ci === 0 ? 5 : 3 }, (_, i) => {
+      const m = make()
+      m.bat.scale.setScalar(1.6 + rand() * 0.9)
+      return {
+        ...m,
+        c,
+        rx: 1.8 + rand() * 2.6,
+        rz: 0.8 + rand() * 1.4,
+        ry: 0.25 + rand() * 0.6,
+        speed: (0.28 + rand() * 0.25) * (rand() < 0.5 ? 1 : -1),
+        phase: rand() * Math.PI * 2 + i,
+        flapSpeed: 13 + rand() * 6,
+      }
     }),
   )
   const next = new THREE.Vector3()
   const at = (f: (typeof flock)[number], a: number, out: THREE.Vector3) =>
-    out.set(f.c.x + Math.cos(a) * f.r, f.c.y + Math.sin(a * 2) * 0.5, f.c.z + Math.sin(a) * f.r * 0.6)
+    out.set(f.c.x + Math.sin(a) * f.rx, f.c.y + Math.sin(a * 2 + f.phase) * f.ry + Math.sin(a * 3.3) * 0.15, f.c.z + Math.sin(a * 2) * f.rz)
   return {
     group: new THREE.Group().add(...flock.map((f) => f.bat)),
     update(t: number) {
       for (const f of flock) {
         const a = t * f.speed + f.phase
         at(f, a, f.bat.position)
-        f.bat.lookAt(at(f, a + 0.05, next))
-        const flap = Math.sin(t * 16 + f.phase) * 0.75
-        f.right.rotation.z = flap
-        f.left.rotation.z = -flap
+        at(f, a + 0.04 * Math.sign(f.speed), next)
+        f.bat.lookAt(next)
+        // inclina para dentro da curva
+        f.bat.rotateZ(-Math.cos(a) * 0.4 * Math.sign(f.speed))
+        // batida: o braço desce, a mão vem atrasada e dobra no pulso; às vezes plana
+        const glide = Math.sin(t * 0.7 + f.phase) > 0.75 ? 0.15 : 1
+        const beat = t * f.flapSpeed + f.phase
+        f.wings.forEach(({ shoulder, wrist }) => {
+          shoulder.rotation.z = (Math.sin(beat) * 0.5 + 0.08) * glide
+          wrist.rotation.z = (Math.sin(beat - 0.9) * 0.45 - 0.1) * glide
+        })
+        f.bat.position.y += Math.sin(beat) * -0.04 * glide
       }
     },
   }

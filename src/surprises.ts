@@ -2,48 +2,65 @@ import * as THREE from 'three'
 import { audio } from './audio'
 import { FX } from './world'
 
-/** gato preto modelado no Blender (blender/cat.py): atravessa a mesa, para, olha para você e mia */
+/** gato preto com esqueleto (blender/cat.py): atravessa a mesa, para, olha para você e mia */
 function createCat(room: THREE.Object3D) {
   const cat = room.getObjectByName('Cat')!
-  const part = (name: string) => {
+  cat.updateMatrixWorld(true)
+  const rootInv = cat.getWorldQuaternion(new THREE.Quaternion()).invert()
+  // cada osso gira em eixos do gato (x = frente, y = cima, z = lado), convertidos para o espaço do osso
+  const bone = (name: string) => {
     const o = cat.getObjectByName(name)!
-    return { o, rest: o.quaternion.clone() }
+    const rel = rootInv.clone().multiply(o.getWorldQuaternion(new THREE.Quaternion())).invert()
+    const axis = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(rel).normalize()
+    return { o, rest: o.quaternion.clone(), side: axis(0, 0, 1), up: axis(0, 1, 0), fwd: axis(1, 0, 0) }
   }
-  const head = part('CatHead')
-  const legs = [0, 1, 2, 3].map((i) => part(`CatLeg${i}`))
-  const tail = [0, 1, 2, 3].map((i) => part(`CatTail${i}`))
+  type Bone = ReturnType<typeof bone>
+  const spine = bone('CatSpine')
+  const head = bone('CatHead')
+  const legs = [0, 1, 2, 3].map((i) => ({ up: bone(`CatLegUp${i}`), low: bone(`CatLegLow${i}`) }))
+  const tail = [0, 1, 2, 3, 4, 5].map((i) => bone(`CatTail${i}`))
   let eye: THREE.MeshStandardMaterial | undefined
   cat.traverse((o) => {
     const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
     if (m?.name === 'CatEye') eye = m
+    if ((o as THREE.Mesh).isMesh) {
+      o.castShadow = true
+      o.frustumCulled = false
+    }
   })
   eye?.emissive.set('#ffe7a0')
-  cat.rotation.y = Math.PI
   cat.visible = false
 
   const q = new THREE.Quaternion()
-  const X = new THREE.Vector3(1, 0, 0)
-  const Y = new THREE.Vector3(0, 1, 0)
-  const Z = new THREE.Vector3(0, 0, 1)
-  const pose = (p: { o: THREE.Object3D; rest: THREE.Quaternion }, axis: THREE.Vector3, angle: number) =>
-    p.o.quaternion.copy(p.rest).multiply(q.setFromAxisAngle(axis, angle))
+  const pose = (b: Bone, ...turns: [THREE.Vector3, number][]) => {
+    b.o.quaternion.copy(b.rest)
+    for (const [axis, angle] of turns) b.o.quaternion.multiply(q.setFromAxisAngle(axis, angle))
+  }
 
   return {
     cat,
     /** walk: 0 parado, 1 andando; turn: 0 olhando para frente, 1 olhando para a câmera */
     pose(t: number, walk: number, turn: number, mood: number) {
-      const phase = t * 9
-      // patas em diagonal andam juntas
-      legs.forEach((l, i) => pose(l, Z, walk * Math.sin(phase + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.45))
-      cat.position.y = walk * Math.abs(Math.sin(phase)) * 0.014
-      cat.rotation.z = walk * Math.sin(phase * 2) * 0.012
-      pose(head, Y, turn * 1.35)
-      head.o.quaternion.multiply(q.setFromAxisAngle(Z, walk * Math.sin(phase * 2) * 0.04 + turn * 0.08))
-      // rabo ondula: cada segmento atrasado em relação ao anterior
-      tail.forEach((s, k) => {
-        const sway = Math.sin(t * (walk ? 3.2 : 5) - k * 0.7) * (0.12 + k * 0.05)
-        pose(s, X, sway)
-        s.o.quaternion.multiply(q.setFromAxisAngle(Z, Math.sin(t * 2.1 - k * 0.6) * 0.06))
+      const phase = t * 8
+      // passo de desenho animado: patas em diagonal juntas, joelho dobra quando a pata sobe
+      legs.forEach((l, i) => {
+        const p = phase + (i === 0 || i === 3 ? 0 : Math.PI)
+        const swing = Math.sin(p) * 0.55 * walk
+        const lift = Math.max(0, Math.cos(p)) * 0.9 * walk
+        const front = i < 2 ? 1 : -1
+        pose(l.up, [l.up.side, swing])
+        pose(l.low, [l.low.side, -lift * front])
+      })
+      // corpo quica e balança; parado, respira
+      const bob = Math.abs(Math.sin(phase)) * walk
+      cat.position.y = bob * 0.018
+      pose(spine, [spine.side, Math.sin(phase * 2) * 0.03 * walk], [spine.fwd, Math.sin(phase) * 0.04 * walk + Math.sin(t * 2.2) * 0.01 * (1 - walk)])
+      // cabeça: acompanha o passo e vira para a câmera inclinando de leve (charme)
+      pose(head, [head.up, turn * 1.3], [head.fwd, turn * 0.18 + Math.sin(phase * 2) * 0.04 * walk], [head.side, -0.05 * bob + turn * 0.06])
+      // rabo ondula em onda: cada osso atrasado em relação ao anterior
+      tail.forEach((b, k) => {
+        const amp = (walk ? 0.18 : 0.26) + k * 0.03
+        pose(b, [b.side, Math.sin(t * (walk ? 3.2 : 4.4) - k * 0.75) * amp * 0.5], [b.fwd, Math.sin(t * 2.3 - k * 0.6) * amp])
       })
       if (eye) eye.emissiveIntensity = 0.15 + turn * 0.9 + mood * 1.2
     },

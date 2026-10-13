@@ -9,3 +9,4 @@ __pycache__
 blender/*.glb
 dist
 node_modules
+divulgacao

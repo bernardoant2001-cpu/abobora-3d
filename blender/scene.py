@@ -380,16 +380,24 @@ pumpkin = link('Pumpkin', body, V(0, lift, 0))
 s = link('PumpkinStem', stem, V(0, top_y - 0.06, 0), pumpkin)
 s.rotation_euler.z = 0.6
 
-base, end = Vector((0.06, 0.62, 0.02)), Vector((0.7, 1.05, -0.25))
-d = (end - base).normalized()
-u = Vector((0, 1, 0)).cross(d).normalized()
-w = d.cross(u)
+def surface_y(rho):
+    """altura da casca no topo a uma distância horizontal rho do talo"""
+    s = min(rho / (RADIUS * 0.97), 0.999)
+    return (math.sqrt(1 - s * s) * SQUASH - 0.32 * math.exp(-(s * s) / 0.05)) * RADIUS
+
+
+# a gavinha sai da base do talo e corre por cima da casca, sempre acima dela, enrolando no ar no fim
+heading = Vector((math.cos(-0.35), 0, math.sin(-0.35)))
+side = Vector((0, 1, 0)).cross(heading).normalized()
 spiral = []
-for i in range(81):
-    t = i / 80
+for i in range(121):
+    t = i / 120
+    rho = 0.1 + 0.62 * t
+    r = 0.06 * (1 - 0.45 * t) * min(1, t * 5)
+    lift = surface_y(rho) + 0.06 + r + 0.3 * t ** 2.5
     a = t * math.pi * 9
-    r = 0.075 * (1 - 0.55 * t) * min(1, t * 6)
-    spiral.append(tuple(base.lerp(end, t) + u * math.cos(a) * r + w * math.sin(a) * r))
+    p = heading * rho + Vector((0, lift, 0)) + side * math.cos(a) * r + Vector((0, math.sin(a) * r, 0))
+    spiral.append(tuple(p))
 tube('PumpkinVine', spiral, lambda t: 0.016 * (1 - 0.5 * t), VINE, 8, pumpkin)
 
 lf = link('PumpkinLeaf', leaf_mesh(LEAF), V(-0.1, top_y + 0.03, 0.08), pumpkin)

@@ -299,23 +299,69 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
   skin.onBeforeCompile = (shader) => {
     shader.uniforms.uGlow = glow
     shader.uniforms.uGuide = { value: carver.guideTexture }
+    shader.uniforms.uWall = { value: (1 - WALL) * RADIUS * 0.9 }
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform sampler2D uGuide;')
+      .replace('#include <common>', '#include <common>\nuniform float uGlow;\nuniform float uWall;\nuniform sampler2D uGuide;')
       .replace(
         '#include <alphamap_fragment>',
         `float carve = texture2D( alphaMap, vAlphaMapUv ).g;
-        diffuseColor.a *= carve;
-        float rim = 1.0 - smoothstep( 0.5, 1.0, carve );
-        float ink = smoothstep( 0.5, 0.55, carve ) * ( 1.0 - smoothstep( 0.62, 0.72, carve ) );
-        float guide = texture2D( uGuide, vAlphaMapUv ).r;
+
+        // parede do corte: dentro de um buraco, segue o raio da câmera pela espessura da casca;
+        // se ele encontra casca intacta, aquele pixel mostra a parede de polpa naquela profundidade
+        vec3 wp = - vViewPosition;
+        vec3 wn = normalize( vNormal );
+        vec3 dp1 = dFdx( wp );
+        vec3 dp2 = dFdy( wp );
+        vec2 duv1 = dFdx( vAlphaMapUv );
+        vec2 duv2 = dFdy( vAlphaMapUv );
+        duv1.x -= floor( duv1.x + 0.5 );
+        duv2.x -= floor( duv2.x + 0.5 );
+        vec3 dp2perp = cross( dp2, wn );
+        vec3 dp1perp = cross( wn, dp1 );
+        float det = dot( dp1, dp2perp );
+        float wallHit = 0.0;
+        float wallDepth = 0.0;
+        if ( carve < 0.5 && abs( det ) > 1e-12 ) {
+          vec3 gu = ( dp2perp * duv1.x + dp1perp * duv2.x ) / det;
+          vec3 gv = ( dp2perp * duv1.y + dp1perp * duv2.y ) / det;
+          vec3 ray = normalize( wp );
+          float tmax = uWall / max( - dot( ray, wn ), 0.08 );
+          vec3 slide = ( ray - wn * dot( ray, wn ) ) * tmax;
+          vec2 reach = vec2( dot( gu, slide ), dot( gv, slide ) );
+          float prev = 0.0;
+          for ( int i = 1; i <= 24; i ++ ) {
+            float f = float( i ) / 24.0;
+            if ( textureLod( alphaMap, vAlphaMapUv + reach * f, 0.0 ).g >= 0.5 ) {
+              float lo = prev;
+              float hi = f;
+              for ( int k = 0; k < 5; k ++ ) {
+                float m = 0.5 * ( lo + hi );
+                if ( textureLod( alphaMap, vAlphaMapUv + reach * m, 0.0 ).g >= 0.5 ) hi = m; else lo = m;
+              }
+              wallHit = 1.0;
+              wallDepth = hi;
+              break;
+            }
+            prev = f;
+          }
+        }
+        diffuseColor.a *= max( carve, wallHit );
+
+        float skinSide = 1.0 - wallHit;
+        float rim = ( 1.0 - smoothstep( 0.5, 1.0, carve ) ) * skinSide;
+        float ink = smoothstep( 0.5, 0.55, carve ) * ( 1.0 - smoothstep( 0.62, 0.72, carve ) ) * skinSide;
+        float guide = texture2D( uGuide, vAlphaMapUv ).r * skinSide;
+        vec3 wallColor = mix( vec3( 1.0, 0.84, 0.55 ), vec3( 0.95, 0.55, 0.18 ), wallDepth );
         diffuseColor.rgb = mix( diffuseColor.rgb, ${FLESH_SKIN}, rim );
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.01, 0.006, 0.002 ), ink );
-        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.95, 0.8 ), guide );`,
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.95, 0.8 ), guide );
+        diffuseColor.rgb = mix( diffuseColor.rgb, wallColor * 0.65, wallHit );`,
       )
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-        totalEmissiveRadiance += vec3( 1.0, 0.55, 0.15 ) * rim * ( 1.0 - ink ) * uGlow + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;`,
+        totalEmissiveRadiance += vec3( 1.0, 0.55, 0.15 ) * rim * ( 1.0 - ink ) * uGlow + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;
+        totalEmissiveRadiance += wallColor * wallHit * ( 0.3 + 0.7 * wallDepth ) * uGlow;`,
       )
   }
 

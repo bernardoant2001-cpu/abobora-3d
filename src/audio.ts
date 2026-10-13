@@ -35,13 +35,13 @@ function ambience() {
   band.type = 'bandpass'
   band.Q.value = 0.8
   const windGain = c.createGain()
-  windGain.gain.value = 0.05
+  windGain.gain.value = 0.015
   wind.connect(band).connect(windGain).connect(master)
   wind.start()
   const gust = () => {
     const t = c.currentTime
-    band.frequency.setTargetAtTime(250 + Math.random() * 650, t, 1.5)
-    windGain.gain.setTargetAtTime(0.025 + Math.random() * 0.06, t, 2)
+    band.frequency.setTargetAtTime(160 + Math.random() * 280, t, 1.5)
+    windGain.gain.setTargetAtTime(0.008 + Math.random() * 0.02, t, 2)
     setTimeout(gust, 2000 + Math.random() * 3000)
   }
   gust()
@@ -61,11 +61,11 @@ function ambience() {
       const s = noiseSource(false)
       const hp = c.createBiquadFilter()
       hp.type = 'highpass'
-      hp.frequency.value = 1200 + Math.random() * 2500
+      hp.frequency.value = 900 + Math.random() * 1200
       const g = c.createGain()
       const at = t + i * 0.04 + Math.random() * 0.05
       g.gain.value = 0
-      envelope(g.gain, at, 0.02 + Math.random() * 0.04, 0.002, 0.03 + Math.random() * 0.05)
+      envelope(g.gain, at, 0.008 + Math.random() * 0.015, 0.002, 0.03 + Math.random() * 0.05)
       s.connect(hp).connect(g).connect(master)
       s.start(at, Math.random() * 1.5, 0.15)
     }
@@ -119,7 +119,7 @@ export const audio = {
     // limitador e um corte nos agudos: nada estoura nem fica estridente, mesmo com vários sons juntos
     const soft = ctx.createBiquadFilter()
     soft.type = 'lowpass'
-    soft.frequency.value = 7000
+    soft.frequency.value = 4500
     const limiter = ctx.createDynamicsCompressor()
     limiter.threshold.value = -18
     limiter.knee.value = 12
@@ -148,9 +148,9 @@ export const audio = {
     const v = Math.min(speed, 1)
     if (t - lastGrain < (shave ? 0.05 : 0.07) - v * 0.035) return
     lastGrain = t
-    if (shave) grain(t, 2200 + Math.random() * 1800, 0.035 + v * 0.03, 0.025)
+    if (shave) grain(t, 1300 + Math.random() * 900, 0.03 + v * 0.025, 0.025)
     else {
-      grain(t, 700 + Math.random() * 900, 0.09 + v * 0.08, 0.04 + Math.random() * 0.03)
+      grain(t, 500 + Math.random() * 600, 0.09 + v * 0.08, 0.04 + Math.random() * 0.03)
       // a polpa úmida cedendo, um pouco depois e mais grave
       if (Math.random() < 0.5) grain(t + 0.015, 260 + Math.random() * 160, 0.1 + v * 0.06, 0.08, 0.7)
     }

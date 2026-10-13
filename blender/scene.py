@@ -11,10 +11,11 @@ import bmesh
 import math
 import os
 import random
+import sys
 from mathutils import Vector, noise
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, 'public', 'models', 'scene.glb')
+OUT = os.path.join(ROOT, 'blender', 'scene.raw.glb')
 BLEND = os.path.join(ROOT, 'blender', 'abobora.blend')
 
 TAU = math.tau
@@ -280,7 +281,16 @@ CORD = mat('Cord', '#141010', 0.8)
 
 # ---------------------------------------------------------------- abóbora
 
-def pumpkin_point(u, j):
+# formatos (viram shape keys / morph targets): achatamento vertical, largura, gargalo de cabaça, gomos
+SHAPES = {
+    'Redonda': dict(sq=SQUASH, w=1.0, neck=0.0, bulb=0.05, groove=0.1),
+    'Alta': dict(sq=1.08, w=0.8, neck=0.0, bulb=0.04, groove=0.08),
+    'Achatada': dict(sq=0.56, w=1.16, neck=0.0, bulb=0.06, groove=0.13),
+    'Cabaca': dict(sq=1.12, w=0.95, neck=0.55, bulb=0.22, groove=0.07),
+}
+
+
+def pumpkin_point(u, j, shape=SHAPES['Redonda']):
     theta = j / SEG_H * math.pi
     phi = u * TAU
     s, h = math.sin(theta), math.cos(theta)
@@ -289,10 +299,11 @@ def pumpkin_point(u, j):
     warp = phi + 0.035 * math.sin(3 * phi + 0.7)
     g = 1 - math.sqrt(abs(math.cos(RIBS * warp / 2)))
     bulge = 1 + 0.02 * math.sin(2 * phi + 1.0) + 0.012 * math.sin(3 * phi + 2.0)
-    r = (1 - 0.1 * g) * (1 + 0.05 * max(0.0, -h)) * bulge
+    r = (1 - shape['groove'] * g) * (1 + shape['bulb'] * max(0.0, -h)) * bulge * shape['w']
+    r *= 1 - shape['neck'] * max(0.0, h) ** 1.6
     r *= 1 + 0.012 * noise.noise(Vector((bx * 2.2, by * 2.2, bz * 2.2)))
     pole = math.exp(-(s * s) / 0.05)
-    y = h * SQUASH - math.copysign(0.32 if h > 0 else 0.2, h) * pole
+    y = h * shape['sq'] - math.copysign(0.32 if h > 0 else 0.2, h) * pole
     lobe, groove, crown = (Vector(hex_lin(x)) for x in ('#ff8a1f', '#b9420d', '#8f4512'))
     c = lobe.lerp(groove, g ** 0.7).lerp(crown, math.exp(-(s * s) / 0.15) * (0.85 if h > 0 else 0.4))
     c *= 1 + 0.06 * noise.noise(Vector((bx * 5, by * 9, bz * 5)))
@@ -415,6 +426,19 @@ stem = stem_mesh()
 top_y = (SQUASH - 0.32) * RADIUS
 
 pumpkin = link('Pumpkin', body, V(0, lift, 0))
+
+# formatos: mesma ordem de vértices de pumpkin_mesh(); todos apoiados na mesma base
+order = [(0, 0)] + [(i / SEG_W, j) for j in range(1, SEG_H) for i in range(SEG_W)] + [(0, SEG_H)]
+pumpkin.shape_key_add(name='Basis', from_mix=False)
+for name, params in SHAPES.items():
+    if name == 'Redonda':
+        continue
+    pts = [pumpkin_point(u, j, params)[0] for u, j in order]
+    dz = min_y - min(p.z for p in pts)
+    key = pumpkin.shape_key_add(name=name, from_mix=False)
+    key.value = 0.0
+    for k, p in enumerate(pts):
+        key.data[k].co = p + Vector((0, 0, dz))
 s = link('PumpkinStem', stem, V(0, top_y - 0.06, 0), pumpkin)
 s.rotation_euler.z = 0.6
 
@@ -432,9 +456,9 @@ for i in range(121):
     t = i / 120
     rho = 0.1 + 0.62 * t
     r = 0.06 * (1 - 0.45 * t) * min(1, t * 5)
-    lift = surface_y(rho) + 0.06 + r + 0.3 * t ** 2.5
+    up = surface_y(rho) + 0.06 + r + 0.3 * t ** 2.5
     a = t * math.pi * 9
-    p = heading * rho + Vector((0, lift, 0)) + side * math.cos(a) * r + Vector((0, math.sin(a) * r, 0))
+    p = heading * rho + Vector((0, up, 0)) + side * math.cos(a) * r + Vector((0, math.sin(a) * r, 0))
     spiral.append(tuple(p))
 tube('PumpkinVine', spiral, lambda t: 0.016 * (1 - 0.5 * t), VINE, 8, pumpkin)
 
@@ -822,6 +846,16 @@ for ob in list(house.children_recursive):
         world_uv(ob)
 
 
+# ---------------------------------------------------------------- gato (o site anima as peças)
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cat import build_cat  # noqa: E402
+from accessories import build_accessories  # noqa: E402
+
+build_cat(col, V(0, 0, 2.0))
+build_accessories(col, pumpkin)
+
+
 # ---------------------------------------------------------------- exportar
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
@@ -832,7 +866,8 @@ bpy.ops.export_scene.gltf(
     export_yup=True,
     export_vertex_color='ACTIVE',
     export_gpu_instances=True,
-    export_draco_mesh_compression_enable=True,
+    export_morph_normal=False,
+    export_draco_mesh_compression_enable=False,
     export_draco_mesh_compression_level=6,
     export_draco_texcoord_quantization=14,
     export_lights=False,

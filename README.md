@@ -11,6 +11,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 - **Raspar**: tira só a casca, sem furar; a parte raspada brilha fraquinho com a vela
 - **Remendo**: devolve a casca onde você cortou demais
 - **Tampa**: corte e levante a tampa da abóbora
+- **Fantasia**: troque o formato (redonda, alta, achatada, pera) e vista a abóbora com chapéu de bruxa, cartola, laço ou chifres
 - Desfazer (`Ctrl+Z`), abóbora nova e modelos prontos: Clássica, Malvada, Fofinha e Vampiro
 - Arraste fora da abóbora para girá-la e inclinar a vista
 - Apagar as luzes para ver só a vela brilhando pelos cortes
@@ -22,7 +23,7 @@ O visual é inspirado nos desenhos animados dos anos 30: tudo em sépia, contorn
 ## Tecnologias
 
 - [Three.js](https://threejs.org/) — renderização, sombras, bloom e um pós-processamento próprio de tinta (sépia, contornos por profundidade/normais, hachura e grão)
-- [Blender](https://www.blender.org/) — modelagem da sala, da mesa, da abóbora e dos objetos, exportada como GLB com compressão Draco
+- [Blender](https://www.blender.org/) — modelagem da sala, da mesa, da abóbora e dos objetos, exportada como GLB comprimido com meshopt
 - Web Audio API — todos os sons gerados em tempo real, sem arquivos de áudio
 - [Vite](https://vite.dev/) + TypeScript
 
@@ -35,11 +36,14 @@ npm run dev
 
 ## Editando a cena no Blender
 
-A cena inteira é gerada pelo script [`blender/scene.py`](blender/scene.py), que também exporta `public/models/scene.glb`:
+A cena inteira (sala, abóbora e seus formatos, gato, acessórios) é gerada pelos scripts em [`blender/`](blender/). Para regerar o modelo do site:
 
 ```bash
 blender -b --factory-startup --python blender/scene.py
+node scripts/compress-model.mjs
 ```
+
+(ou `npm run model`, se o Blender estiver no PATH)
 
 O script também salva `blender/abobora.blend` (fora do Git) para você abrir e explorar no Blender.
 

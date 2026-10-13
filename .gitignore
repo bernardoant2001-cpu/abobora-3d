@@ -1,9 +1,11 @@
-node_modules
-dist
-.vercel
+*.blend
+*.blend1
 *.local
 .DS_Store
-*.blend1
-*.blend
 .env
 .env.*
+.vercel
+__pycache__
+blender/*.glb
+dist
+node_modules

@@ -47,6 +47,13 @@
 
     <div id="stencils" class="stencils paper" hidden></div>
 
+    <div id="costume" class="costume paper" hidden>
+      <p class="panel-title">Formato</p>
+      <div class="chips" id="shapes" role="group" aria-label="Formato da abóbora"></div>
+      <p class="panel-title">Acessório</p>
+      <div class="chips" id="accs" role="group" aria-label="Acessório"></div>
+    </div>
+
     <div class="loader" role="status" aria-live="polite">
       <div class="reel">
         <div class="leader" aria-hidden="true"></div>
@@ -110,6 +117,10 @@
         </button>
         <button id="lid" aria-pressed="false" title="Tirar a tampa" aria-label="Tampa">
           <svg viewBox="0 0 24 24"><path d="M4 15.5c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3z" /><path d="M12 9V5.5c0-1 .8-2 2.2-2.2" /></svg>
+        </button>
+        <button id="style" aria-expanded="false" aria-controls="costume" title="Fantasia: formato e acessórios">
+          <svg viewBox="0 0 24 24"><path d="M3 18.5c3-1.6 15-1.6 18 0M7 17.6 11.5 4c.6-.9 1.7-.6 2 .4l3.5 13.2" /><path d="M8.6 13.2c2.2.5 4.6.5 6.8 0" /></svg>
+          <span>Fantasia</span>
         </button>
         <button id="faces" class="accent" aria-expanded="false" aria-controls="stencils" title="Modelos de rosto">
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M8 14.5s1.5 2 4 2 4-2 4-2M9 9.5h.01M15 9.5h.01" /></svg>

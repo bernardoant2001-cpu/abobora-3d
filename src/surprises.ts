@@ -2,56 +2,52 @@ import * as THREE from 'three'
 import { audio } from './audio'
 import { FX } from './world'
 
-/** gato preto que atravessa a mesa, para, olha para você e mia */
-function createCat() {
-  const fur = new THREE.MeshStandardMaterial({ color: '#070505', roughness: 0.65 })
-  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.4, 0.4) })
-  const cat = new THREE.Group()
-
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.3, 6, 14), fur)
-  body.rotation.z = Math.PI / 2
-  body.position.y = 0.24
-
-  const head = new THREE.Group()
-  head.position.set(0.25, 0.36, 0)
-  head.add(new THREE.Mesh(new THREE.SphereGeometry(0.105, 16, 12), fur))
-  for (const s of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.042, 0.1, 4), fur)
-    ear.position.set(0.01, 0.1, s * 0.055)
-    ear.rotation.x = s * 0.35
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.019, 10, 8), eyeMat)
-    eye.position.set(0.088, 0.018, s * 0.042)
-    eye.scale.set(0.6, 1.4, 1)
-    head.add(ear, eye)
+/** gato preto modelado no Blender (blender/cat.py): atravessa a mesa, para, olha para você e mia */
+function createCat(room: THREE.Object3D) {
+  const cat = room.getObjectByName('Cat')!
+  const part = (name: string) => {
+    const o = cat.getObjectByName(name)!
+    return { o, rest: o.quaternion.clone() }
   }
-
-  const tailCurve = new THREE.CatmullRomCurve3(
-    [[-0.2, 0.26, 0], [-0.33, 0.38, 0], [-0.37, 0.58, 0.01], [-0.3, 0.72, 0.03]].map(([x, y, z]) => new THREE.Vector3(x, y, z)),
-  )
-  const tail = new THREE.Mesh(new THREE.TubeGeometry(tailCurve, 24, 0.022, 6), fur)
-  const tailPivot = new THREE.Group()
-  tailPivot.position.set(-0.2, 0.26, 0)
-  tail.position.set(0.2, -0.26, 0)
-  tailPivot.add(tail)
-
-  const legGeo = new THREE.CylinderGeometry(0.026, 0.022, 0.2, 8).translate(0, -0.1, 0)
-  const legs = [
-    [0.13, 0.06],
-    [0.13, -0.06],
-    [-0.13, 0.06],
-    [-0.13, -0.06],
-  ].map(([x, z]) => {
-    const pivot = new THREE.Group()
-    pivot.position.set(x, 0.2, z)
-    pivot.add(new THREE.Mesh(legGeo, fur))
-    return pivot
+  const head = part('CatHead')
+  const legs = [0, 1, 2, 3].map((i) => part(`CatLeg${i}`))
+  const tail = [0, 1, 2, 3].map((i) => part(`CatTail${i}`))
+  let eye: THREE.MeshStandardMaterial | undefined
+  cat.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+    if (m?.name === 'CatEye') eye = m
   })
-
-  cat.add(body, head, tailPivot, ...legs)
-  cat.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.castShadow = true) : null))
+  eye?.emissive.set('#ffe7a0')
   cat.rotation.y = Math.PI
   cat.visible = false
-  return { cat, head, tailPivot, legs, eyeMat }
+
+  const q = new THREE.Quaternion()
+  const X = new THREE.Vector3(1, 0, 0)
+  const Y = new THREE.Vector3(0, 1, 0)
+  const Z = new THREE.Vector3(0, 0, 1)
+  const pose = (p: { o: THREE.Object3D; rest: THREE.Quaternion }, axis: THREE.Vector3, angle: number) =>
+    p.o.quaternion.copy(p.rest).multiply(q.setFromAxisAngle(axis, angle))
+
+  return {
+    cat,
+    /** walk: 0 parado, 1 andando; turn: 0 olhando para frente, 1 olhando para a câmera */
+    pose(t: number, walk: number, turn: number, mood: number) {
+      const phase = t * 9
+      // patas em diagonal andam juntas
+      legs.forEach((l, i) => pose(l, Z, walk * Math.sin(phase + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.45))
+      cat.position.y = walk * Math.abs(Math.sin(phase)) * 0.014
+      cat.rotation.z = walk * Math.sin(phase * 2) * 0.012
+      pose(head, Y, turn * 1.35)
+      head.o.quaternion.multiply(q.setFromAxisAngle(Z, walk * Math.sin(phase * 2) * 0.04 + turn * 0.08))
+      // rabo ondula: cada segmento atrasado em relação ao anterior
+      tail.forEach((s, k) => {
+        const sway = Math.sin(t * (walk ? 3.2 : 5) - k * 0.7) * (0.12 + k * 0.05)
+        pose(s, X, sway)
+        s.o.quaternion.multiply(q.setFromAxisAngle(Z, Math.sin(t * 2.1 - k * 0.6) * 0.06))
+      })
+      if (eye) eye.emissiveIntensity = 0.15 + turn * 0.9 + mood * 1.2
+    },
+  }
 }
 
 /** fantasma de lençol que flutua pela sala quando as luzes apagam */
@@ -92,18 +88,24 @@ function createGhost() {
   return { ghost, geo, base, sheet, face }
 }
 
-export function createSurprises(scene: THREE.Scene) {
-  const c = createCat()
+export function createSurprises(scene: THREE.Scene, room: THREE.Object3D) {
+  const c = createCat(room)
   const g = createGhost()
-  scene.add(c.cat, g.ghost)
+  scene.attach(c.cat)
+  scene.add(g.ghost)
 
   let catAt = 28
   let catT = -1
   let meowed = false
+  let walk = 1
   let ghostStart: number | null = null
   let ghostT: number | null = null
   let ghostReady = 0
-  const STOP = 0.4
+  // à direita da abóbora, numa faixa que a câmera vê acima da barra de ferramentas
+  const START = 4.8
+  const STOP = 1.85
+  const LANE = 1.2
+  const SPEED = 0.9
   const pos = g.geo.attributes.position
 
   return {
@@ -113,8 +115,8 @@ export function createSurprises(scene: THREE.Scene) {
       ghostStart = t + 1.2
       ghostReady = t + 25
     },
-    update(t: number, dt: number) {
-      // gato: entra pela direita, para no meio, olha, mia e sai pela esquerda
+    update(t: number, dt: number, mood: number) {
+      // gato: entra pela direita, para ao lado da abóbora, olha, mia, dá meia-volta e sai por onde entrou
       if (catT < 0 && t > catAt) {
         catT = 0
         meowed = false
@@ -122,14 +124,15 @@ export function createSurprises(scene: THREE.Scene) {
       }
       if (catT >= 0) {
         catT += dt
-        const walkIn = (4.6 - STOP) / 0.9
+        const walkIn = (START - STOP) / SPEED
         const look = 2.6
-        let x: number
+        const turnBack = 0.8
+        let x = STOP
+        let heading = Math.PI
         let moving = true
         let turn = 0
-        if (catT < walkIn) x = 4.6 - catT * 0.9
+        if (catT < walkIn) x = START - catT * SPEED
         else if (catT < walkIn + look) {
-          x = STOP
           moving = false
           const k = (catT - walkIn) / look
           turn = k < 0.85 ? Math.min(1, k * 4) : (1 - k) / 0.15
@@ -137,16 +140,19 @@ export function createSurprises(scene: THREE.Scene) {
             meowed = true
             audio.meow()
           }
-        } else x = STOP - (catT - walkIn - look) * 0.9
-        c.cat.position.set(x, 0, 2.0)
-        c.head.rotation.y = (turn * Math.PI) / 2
-        c.eyeMat.color.setRGB(2.2 + turn * 1.6, 1.8 + turn * 1.2, 0.3)
-        const phase = t * 11
-        // patas em diagonal andam juntas
-        c.legs.forEach((l, i) => (l.rotation.z = moving ? Math.sin(phase + (i === 0 || i === 3 ? 0 : Math.PI)) * 0.5 : 0))
-        c.cat.position.y = moving ? Math.abs(Math.sin(phase)) * 0.012 : 0
-        c.tailPivot.rotation.x = Math.sin(t * (moving ? 3 : 6)) * (moving ? 0.25 : 0.5)
-        if (x < -4.6) {
+        } else if (catT < walkIn + look + turnBack) {
+          const k = (catT - walkIn - look) / turnBack
+          heading = Math.PI * (1 - (1 - Math.cos(k * Math.PI)) / 2)
+        } else {
+          heading = 0
+          x = STOP + (catT - walkIn - look - turnBack) * SPEED
+        }
+        c.cat.position.x = x
+        c.cat.position.z = LANE
+        c.cat.rotation.set(0, heading, 0)
+        walk += ((moving ? 1 : 0) - walk) * (1 - Math.exp(-dt * 8))
+        c.pose(t, walk, turn, mood)
+        if (x > START + 0.2) {
           catT = -1
           c.cat.visible = false
           catAt = t + 70 + Math.random() * 40

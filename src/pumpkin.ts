@@ -345,18 +345,31 @@ function lidGeometry(geo: THREE.BufferGeometry) {
       else open.set(key, [a, b])
     }
   }
+  const morphs = geo.morphAttributes.position ?? []
   const strip: number[] = []
+  const deltas: number[][] = morphs.map(() => [])
   const va = new THREE.Vector3()
   const vb = new THREE.Vector3()
+  // cada aresta vira 2 triângulos: externo (va, vb) ligado ao interno (va, vb) * WALL
+  const ring = (v: THREE.Vector3, k: number) => [v, v, v.clone().multiplyScalar(WALL), v, v.clone().multiplyScalar(WALL), v.clone().multiplyScalar(WALL)][k]
   for (const [a, b] of open.values()) {
     va.fromBufferAttribute(pos, a)
     vb.fromBufferAttribute(pos, b)
-    const ia = va.clone().multiplyScalar(WALL)
-    const ib = vb.clone().multiplyScalar(WALL)
-    strip.push(...vb.toArray(), ...va.toArray(), ...ia.toArray(), ...vb.toArray(), ...ia.toArray(), ...ib.toArray())
+    const order = [vb, va, va, vb, va, vb]
+    order.forEach((v, k) => strip.push(...ring(v, k).toArray()))
+    morphs.forEach((m, t) => {
+      const da = new THREE.Vector3().fromBufferAttribute(m, a)
+      const db = new THREE.Vector3().fromBufferAttribute(m, b)
+      const dorder = [db, da, da, db, da, db]
+      dorder.forEach((d, k) => deltas[t].push(...ring(d, k).toArray()))
+    })
   }
   const rim = new THREE.BufferGeometry()
   rim.setAttribute('position', new THREE.Float32BufferAttribute(strip, 3))
+  rim.morphAttributes.position = deltas.map((d) => new THREE.Float32BufferAttribute(d, 3))
+  rim.morphTargetsRelative = true
+  lid.morphAttributes = geo.morphAttributes
+  lid.morphTargetsRelative = geo.morphTargetsRelative
   rim.computeVertexNormals()
   // a tampa compartilha o atributo de posição da abóbora inteira: mede só os vértices dela
   const bottom = Math.min(...keep.map((k) => pos.getY(k)))
@@ -442,7 +455,7 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         float guide = texture2D( uGuide, vAlphaMapUv ).r * skinSide;
         vec3 wallColor = mix( vec3( 1.0, 0.84, 0.55 ), vec3( 0.95, 0.55, 0.18 ), wallDepth );
         diffuseColor.rgb = mix( diffuseColor.rgb, ${FLESH_SKIN}, rim );
-        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.82, 0.52 ), shave * 0.9 );
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.95, 0.6, 0.28 ), shave * 0.8 );
         diffuseColor.rgb *= 1.0 - shaveLine * 0.35;
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.01, 0.006, 0.002 ), ink );
         diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.95, 0.8 ), guide );
@@ -452,7 +465,7 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         totalEmissiveRadiance += vec3( 1.0, 0.55, 0.15 ) * rim * ( 1.0 - ink ) * uGlow + vec3( 1.0, 0.85, 0.55 ) * guide * 0.6;
-        totalEmissiveRadiance += vec3( 1.0, 0.62, 0.22 ) * shave * uGlow * 0.55;
+        totalEmissiveRadiance += vec3( 0.85, 0.38, 0.08 ) * shave * uGlow * 0.3;
         totalEmissiveRadiance += wallColor * wallHit * ( 0.3 + 0.7 * wallDepth ) * uGlow;`,
       )
   }
@@ -533,28 +546,108 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
     m.castShadow = true
   }
   lid.add(...lidMeshes)
+
+  // talo, gavinha, folha e acessórios vivem num grupo que sobe/desce com o topo de cada formato
+  const crown = new THREE.Group()
+  lid.add(crown)
   for (const name of ['PumpkinStem', 'PumpkinVine', 'PumpkinLeaf']) {
     const o = outer.getObjectByName(name)
-    if (o) lid.add(o)
+    if (o) crown.add(o)
   }
+  const accessories = new Map<string, THREE.Object3D>()
+  for (const name of ['AccWitch', 'AccTopHat', 'AccBow', 'AccHorns']) {
+    const o = outer.getObjectByName(name)
+    if (!o) continue
+    o.visible = false
+    o.traverse((c) => (c.castShadow = true))
+    crown.add(o)
+    accessories.set(name, o)
+  }
+  const decor = ['PumpkinVine', 'PumpkinLeaf'].map((n) => crown.getObjectByName(n)).filter(Boolean) as THREE.Object3D[]
 
   outer.add(inner, wax, flame.group, light, lid)
 
+  // ---------- formatos (morph targets exportados do Blender) ----------
+  const geo = outer.geometry
+  const morphs = geo.morphAttributes.position ?? []
+  const names = Object.keys(outer.morphTargetDictionary ?? {})
+  const uv = geo.getAttribute('uv')
+  const pos = geo.getAttribute('position')
+  let pole = 0
+  for (let i = 0; i < uv.count; i++) if (uv.getY(i) > uv.getY(pole)) pole = i
+  const ring: number[] = []
+  for (let i = 0; i < uv.count; i++) if (Math.abs(uv.getY(i) - 0.82) < 0.006) ring.push(i)
+  const radiusOf = (i: number, m?: THREE.BufferAttribute | THREE.InterleavedBufferAttribute) =>
+    Math.hypot(pos.getX(i) + (m?.getX(i) ?? 0), pos.getZ(i) + (m?.getZ(i) ?? 0))
+  const baseRing = ring.reduce((s, i) => s + radiusOf(i), 0) / ring.length
+  // por formato: quanto o topo sobe, quanto a borda da tampa sobe e a largura do topo
+  const shapeInfo = morphs.map((m) => ({
+    lift: m.getY(pole),
+    edge: ring.reduce((s, i) => s + m.getY(i), 0) / ring.length,
+    width: ring.reduce((s, i) => s + radiusOf(i, m), 0) / ring.length / baseRing,
+  }))
+  // caixas por formato (base + cada morph) para as sementes não entrarem na abóbora
+  const boxes = [null, ...morphs].map((m) => {
+    const b = new THREE.Box3()
+    const v = new THREE.Vector3()
+    for (let i = 0; i < pos.count; i += 7) {
+      v.set(pos.getX(i) + (m?.getX(i) ?? 0), pos.getY(i) + (m?.getY(i) ?? 0), pos.getZ(i) + (m?.getZ(i) ?? 0))
+      b.expandByPoint(v)
+    }
+    return b
+  })
+  const weights = morphs.map(() => 0)
+  const targets = morphs.map(() => 0)
+  const morphed = [outer, inner, lidMeshes[0], lidMeshes[1], lidMeshes[2]]
+  let squish = -1
+  let pop: { o: THREE.Object3D; t: number } | null = null
+
   // animação da tampa: sobe, faz um arco e pousa na mesa ao lado (e volta)
-  const rest = new THREE.Vector3(1.75, -parts.bottom + 0.004, 0.95)
-  const restQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.04, 0.9, -0.05))
+  const rest = new THREE.Vector3(-1.45, 0, -1.15)
+  const restQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.04, -0.7, 0.05))
   const scratch = new THREE.Vector3()
   let anim: { t: number; p0: THREE.Vector3; q0: THREE.Quaternion; p1: THREE.Vector3; q1: THREE.Quaternion; opening: boolean } | null =
     null
   let open = false
+  const mix = (f: (s: (typeof shapeInfo)[number]) => number) => shapeInfo.reduce((s, info, k) => s + weights[k] * f(info), 0)
 
   return {
     outer,
     flame,
     light,
     baseLight: light.position.clone(),
+    shapes: ['Redonda', ...names],
     get lidOpen() {
       return open
+    },
+    /** troca o formato (o nome vem dos shape keys do Blender; 'Redonda' é a base) */
+    setShape(name: string) {
+      targets.fill(0)
+      const k = names.indexOf(name)
+      if (k >= 0) targets[k] = 1
+      squish = 0
+    },
+    /** mostra um acessório (ou nenhum) */
+    setAccessory(name: string | null) {
+      accessories.forEach((o, n) => (o.visible = n === name))
+      const hat = name === 'AccWitch' || name === 'AccTopHat'
+      decor.forEach((o) => (o.visible = !hat))
+      const o = name ? accessories.get(name) : undefined
+      pop = o ? { o, t: 0 } : null
+    },
+    /** elipsoide aproximado do formato atual, em coordenadas do mundo */
+    collider(out: { center: THREE.Vector3; radius: number; height: number }) {
+      const b = new THREE.Box3().copy(boxes[0])
+      const lerpBox = (k: number, w: number) => {
+        b.min.lerp(boxes[k + 1].min, w)
+        b.max.lerp(boxes[k + 1].max, w)
+      }
+      weights.forEach((w, k) => w > 0 && lerpBox(k, w))
+      b.getCenter(out.center)
+      out.center.add(outer.position)
+      out.radius = Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2
+      out.height = (b.max.y - b.min.y) / 2
+      return out
     },
     toggleLid(scene: THREE.Scene) {
       if (anim) return
@@ -565,7 +658,9 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
         scene.attach(lid)
         lidOpen.value = 1
         for (const m of lidMeshes) m.visible = true
-        anim = { t: 0, p0, q0, p1: rest.clone(), q1: restQ.clone(), opening: true }
+        const p1 = rest.clone()
+        p1.y = -(parts.bottom + mix((s) => s.edge)) + 0.004
+        anim = { t: 0, p0, q0, p1, q1: restQ.clone(), opening: true }
       } else {
         outer.updateMatrixWorld()
         const p1 = new THREE.Vector3()
@@ -576,6 +671,33 @@ export function createCarvedPumpkin(outer: THREE.Mesh, carver: Carver, glow: { v
       open = !open
     },
     update(dt: number) {
+      // formatos: aproxima os pesos do alvo e aplica em tudo que compartilha a malha
+      const ease = 1 - Math.exp(-dt * 7)
+      weights.forEach((w, k) => (weights[k] = w + (targets[k] - w) * ease))
+      for (const m of morphed) if (m.morphTargetInfluences) weights.forEach((w, k) => (m.morphTargetInfluences![k] = w))
+      crown.position.y = mix((s) => s.lift)
+      const width = 1 + mix((s) => s.width - 1)
+      crown.scale.set(width, 1, width)
+      if (squish >= 0) {
+        squish += dt
+        const k = Math.max(0, 1 - squish / 0.7)
+        const s = Math.sin(squish * 18) * 0.06 * k
+        if (!anim) outer.scale.set(1 + s * 0.6, 1 - s, 1 + s * 0.6)
+        if (squish > 0.7) {
+          squish = -1
+          outer.scale.set(1, 1, 1)
+        }
+      }
+      if (pop) {
+        pop.t += dt
+        const t = Math.min(1, pop.t / 0.45)
+        pop.o.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.25 * (1 - t) + (t < 0.2 ? t / 0.2 - 1 : 0))
+        if (t >= 1) {
+          pop.o.scale.setScalar(1)
+          pop = null
+        }
+      }
+
       if (!anim) return
       anim.t = Math.min(1, anim.t + dt / 1.4)
       const k = anim.t < 0.5 ? 4 * anim.t ** 3 : 1 - (-2 * anim.t + 2) ** 3 / 2

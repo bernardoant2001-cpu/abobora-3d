@@ -2,7 +2,7 @@ import './style.css'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
@@ -44,25 +44,59 @@ const setLoad = (p: number) => {
 // quando o servidor não informa o tamanho (gzip), sobe devagar sozinho até 90%
 const creep = setInterval(() => setLoad(Math.max(realLoad, shownLoad + (0.9 - shownLoad) * 0.06)), 120)
 
-const draco = new DRACOLoader().setDecoderPath('/draco/')
 const [gltf] = await Promise.all([
-  new GLTFLoader().setDRACOLoader(draco).loadAsync('/models/scene.glb', (e) => {
+  new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync('/models/scene.glb', (e) => {
     if (e.total) realLoad = (e.loaded / e.total) * 0.92
   }),
   document.fonts.load('92px Creepster'),
   document.fonts.load('30px "Special Elite"'),
 ])
-draco.dispose()
+
+/**
+ * O meshopt guarda a malha quantizada da abóbora num filho sem nome (com escala e deslocamento
+ * para desfazer a quantização). Aqui ela volta para float e assume o lugar do nó 'Pumpkin',
+ * para a escultura, a parede interna e a tampa trabalharem nas coordenadas reais.
+ */
+function adoptPumpkin(node: THREE.Object3D) {
+  const skin = node.children.find((c) => (c as THREE.Mesh).isMesh && (c as THREE.Mesh).geometry.morphAttributes.position) as THREE.Mesh
+  const src = skin.geometry
+  const toFloat = (a: THREE.BufferAttribute | THREE.InterleavedBufferAttribute, scale = 1) => {
+    const n = a.itemSize
+    const out = new Float32Array(a.count * n)
+    const get = [a.getX, a.getY, a.getZ, a.getW]
+    for (let i = 0; i < a.count; i++) for (let k = 0; k < n; k++) out[i * n + k] = get[k].call(a, i) * scale
+    return new THREE.BufferAttribute(out, n)
+  }
+  const geo = new THREE.BufferGeometry()
+  for (const name of ['position', 'normal', 'uv', 'color']) if (src.attributes[name]) geo.setAttribute(name, toFloat(src.attributes[name]))
+  geo.setIndex(src.index)
+  skin.updateMatrix()
+  geo.applyMatrix4(skin.matrix)
+  geo.morphAttributes.position = (src.morphAttributes.position ?? []).map((a) => toFloat(a, skin.scale.x))
+  geo.morphTargetsRelative = src.morphTargetsRelative
+  const mesh = new THREE.Mesh(geo, skin.material)
+  mesh.name = 'Pumpkin'
+  mesh.castShadow = true
+  mesh.morphTargetDictionary = skin.morphTargetDictionary
+  mesh.position.copy(node.position)
+  mesh.quaternion.copy(node.quaternion)
+  mesh.scale.copy(node.scale)
+  for (const child of [...node.children]) if (child !== skin) mesh.add(child)
+  node.parent!.add(mesh)
+  node.removeFromParent()
+  return mesh
+}
 
 const carver = new Carver()
 carver.texture.anisotropy = renderer.capabilities.getMaxAnisotropy()
 const glow = { value: 1 }
 const updateWorld = createWorld(scene, gltf.scene)
-const pumpkin = createCarvedPumpkin(gltf.scene.getObjectByName('Pumpkin') as THREE.Mesh, carver, glow)
-const surprises = createSurprises(scene)
+const pumpkin = createCarvedPumpkin(adoptPumpkin(gltf.scene.getObjectByName('Pumpkin')!), carver, glow)
+const surprises = createSurprises(scene, gltf.scene)
 
 let lastTick = 0
-const seeds = createSeeds(scene, pumpkin.outer.getWorldPosition(new THREE.Vector3()), RADIUS, () => {
+const colliderState = { center: new THREE.Vector3(), radius: RADIUS, height: RADIUS * 0.8 }
+const seeds = createSeeds(scene, () => pumpkin.collider(colliderState), () => {
   const now = performance.now()
   if (now - lastTick > 45) {
     lastTick = now
@@ -375,6 +409,69 @@ addEventListener('pointerdown', (e) => {
   if (!panel.hidden && !panel.contains(e.target as Node) && !facesButton.contains(e.target as Node)) togglePanel(false)
 })
 
+// ---------- fantasia: formato e acessório ----------
+
+const SHAPE_ICONS: Record<string, string> = {
+  Redonda: '<ellipse cx="12" cy="14" rx="9" ry="7.5"/><path d="M12 6.5V3.5M8.5 7.5c-1.4 4-1.4 9 0 13M15.5 7.5c1.4 4 1.4 9 0 13"/>',
+  Alta: '<ellipse cx="12" cy="13" rx="6" ry="9.5"/><path d="M12 3.5V1.8M9.5 4.5c-1 5-1 12 0 17M14.5 4.5c1 5 1 12 0 17"/>',
+  Achatada: '<ellipse cx="12" cy="15" rx="10.5" ry="5.5"/><path d="M12 9.5V6.5M7.5 10c-1.3 3-1.3 7 0 10M16.5 10c1.3 3 1.3 7 0 10"/>',
+  Cabaca: '<path d="M12 4c-2.5 0-3.5 2.5-4 5.5C4.5 11 3.5 14 4 16.5 4.7 20 8 22 12 22s7.3-2 8-5.5c.5-2.5-.5-5.5-4-7C15.5 6.5 14.5 4 12 4z"/><path d="M12 4V1.8"/>',
+}
+const SHAPE_LABELS: Record<string, string> = { Cabaca: 'Pera' }
+const ACCESSORIES: [string | null, string, string][] = [
+  [null, 'Nenhum', '<circle cx="12" cy="12" r="8.5"/><path d="m6 18 12-12"/>'],
+  ['AccWitch', 'Bruxa', '<path d="M2.5 18.5c3.5-1.8 15.5-1.8 19 0M7 17.6l4-11.5c.5-1.5-.5-3 1.5-4 .5 2.2 1.5 3 1.5 5l3 10.5"/><path d="M8.6 13.6c2.2.5 4.6.5 6.8 0"/>'],
+  ['AccTopHat', 'Cartola', '<path d="M3 18.5c4-1.5 14-1.5 18 0M7 17.5V5.5h10v12"/><path d="M7 14h10"/>'],
+  ['AccBow', 'Laço', '<path d="M12 12 4 7.5v9zM12 12l8-4.5v9z"/><circle cx="12" cy="12" r="1.8"/>'],
+  ['AccHorns', 'Chifres', '<path d="M7 20c-3-3-3-9 1-14 0 4 1 7 3 9M17 20c3-3 3-9-1-14 0 4-1 7-3 9"/>'],
+]
+
+function chip(label: string, icon: string, onPick: () => void) {
+  const b = document.createElement('button')
+  b.className = 'chip'
+  b.setAttribute('aria-pressed', 'false')
+  b.innerHTML = `<svg viewBox="0 0 24 24">${icon}</svg><span></span>`
+  b.querySelector('span')!.textContent = label
+  b.addEventListener('click', () => {
+    b.parentElement!.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', String(c === b)))
+    onPick()
+  })
+  return b
+}
+const shapesRow = $('#shapes')
+for (const name of pumpkin.shapes) {
+  shapesRow.append(
+    chip(SHAPE_LABELS[name] ?? name, SHAPE_ICONS[name] ?? SHAPE_ICONS.Redonda, () => {
+      pumpkin.setShape(name)
+      audio.pop()
+    }),
+  )
+}
+const accsRow = $('#accs')
+for (const [name, label, icon] of ACCESSORIES) {
+  accsRow.append(
+    chip(label, icon, () => {
+      pumpkin.setAccessory(name)
+      if (name) audio.pop()
+    }),
+  )
+}
+shapesRow.firstElementChild?.setAttribute('aria-pressed', 'true')
+accsRow.firstElementChild?.setAttribute('aria-pressed', 'true')
+
+const styleButton = $<HTMLButtonElement>('#style')
+const costume = $('#costume')
+const toggleCostume = (open = costume.hidden) => {
+  costume.hidden = !open
+  styleButton.setAttribute('aria-expanded', String(open))
+  if (open) togglePanel(false)
+}
+styleButton.addEventListener('click', () => toggleCostume())
+facesButton.addEventListener('click', () => toggleCostume(false))
+addEventListener('pointerdown', (e) => {
+  if (!costume.hidden && !costume.contains(e.target as Node) && !styleButton.contains(e.target as Node)) toggleCostume(false)
+})
+
 const lightsButton = $<HTMLButtonElement>('#lights')
 lightsButton.addEventListener('click', () => {
   const off = lightsButton.getAttribute('aria-pressed') !== 'true'
@@ -490,7 +587,7 @@ renderer.setAnimationLoop((ms) => {
     const s = Math.sin(laughT * 22) * 0.05 * k
     pumpkin.outer.scale.set(1 - s * 0.5, 1 + s, 1 - s * 0.5)
     pumpkin.outer.rotation.z = Math.sin(laughT * 14) * 0.04 * k
-    boost = 1 + 0.8 * k
+    boost = 1 + 0.35 * k
     if (laughT > 1.5) {
       laughT = -1
       pumpkin.outer.scale.set(1, 1, 1)
@@ -503,21 +600,21 @@ renderer.setAnimationLoop((ms) => {
 
   // vela da abóbora: tremula, muda de tom e balança um pouco, fazendo o rosto projetado dançar
   const f = flicker(t, 1)
-  pumpkin.light.intensity = (6 + 10 * mood) * f * boost
+  pumpkin.light.intensity = (6 + 6 * mood) * f * boost
   pumpkin.light.color.copy(warm).lerp(hot, (f - 0.72) / 0.28)
   pumpkin.light.position.set(
     pumpkin.baseLight.x + (flicker(t * 1.4, 2) - 0.86) * 0.07,
     pumpkin.baseLight.y + (flicker(t * 1.1, 3) - 0.86) * 0.04,
     pumpkin.baseLight.z + (flicker(t * 1.3, 4) - 0.86) * 0.07,
   )
-  glow.value = (0.6 + 0.6 * mood) * f * boost
+  glow.value = Math.min(1.1, (0.6 + 0.3 * mood) * f * boost)
   lean += (THREE.MathUtils.clamp(-spinVel * 5, -0.3, 0.3) - lean) * (1 - Math.exp(-dt * 6))
-  pumpkin.flame.update(t, f * 1.15 * boost, lean)
+  pumpkin.flame.update(t, f * 1.1, lean)
   bloom.strength = THREE.MathUtils.lerp(0.6, 0.8, mood)
 
   pumpkin.update(dt)
   seeds.update(dt)
-  surprises.update(t, dt)
+  surprises.update(t, dt, mood)
   updateWorld(t, mood)
   ink.update(t, mood)
   render()

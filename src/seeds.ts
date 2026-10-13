@@ -17,7 +17,9 @@ type Bit = {
 }
 
 /** sementes e pedacinhos de polpa que saltam enquanto a abóbora é cortada */
-export function createSeeds(scene: THREE.Scene, pumpkinCenter: THREE.Vector3, radius: number, onHit: () => void) {
+export type Collider = { center: THREE.Vector3; radius: number; height: number }
+
+export function createSeeds(scene: THREE.Scene, collider: () => Collider, onHit: () => void) {
   const seedGeo = new THREE.SphereGeometry(1, 10, 6).scale(1, 0.32, 0.6)
   const chunkGeo = new THREE.IcosahedronGeometry(1, 0)
   const meshes = [
@@ -76,6 +78,7 @@ export function createSeeds(scene: THREE.Scene, pumpkinCenter: THREE.Vector3, ra
       }
     },
     update(dt: number) {
+      const { center, radius, height } = collider()
       for (const kind of [0, 1] as const) {
         slots[kind].forEach((b, i) => {
           if (!b || b.resting) return
@@ -85,11 +88,11 @@ export function createSeeds(scene: THREE.Scene, pumpkinCenter: THREE.Vector3, ra
           b.q.multiply(dq)
 
           // não deixa entrar na abóbora (elipsoide achatado)
-          tmp.copy(b.p).sub(pumpkinCenter)
-          const e = (tmp.x * tmp.x + tmp.z * tmp.z) / (radius * radius) + (tmp.y * tmp.y) / (radius * 0.8) ** 2
+          tmp.copy(b.p).sub(center)
+          const e = (tmp.x * tmp.x + tmp.z * tmp.z) / (radius * radius) + (tmp.y * tmp.y) / (height * height)
           if (e < 1) {
-            b.p.copy(pumpkinCenter).addScaledVector(tmp, 1.01 / Math.sqrt(Math.max(e, 0.01)))
-            const n = tmp.set(tmp.x, tmp.y / 0.64, tmp.z).normalize()
+            b.p.copy(center).addScaledVector(tmp, 1.01 / Math.sqrt(Math.max(e, 0.01)))
+            const n = tmp.set(tmp.x / (radius * radius), tmp.y / (height * height), tmp.z / (radius * radius)).normalize()
             const vn = b.v.dot(n)
             if (vn < 0) b.v.addScaledVector(n, -1.4 * vn)
           }

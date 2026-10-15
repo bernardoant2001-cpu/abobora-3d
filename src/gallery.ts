@@ -1,5 +1,5 @@
-// Exposição: visitantes enviam a abóbora com o nome; depois de aprovada em /admin.html ela aparece aqui.
-// Cada obra aprovada tem um link próprio (/a/<id>) que abre direto nela, e pode receber curtidas.
+// Exposição: visitantes enviam a abóbora com o nome e ela aparece aqui na hora (dá pra tirar em /admin.html).
+// Cada obra tem um link próprio (/a/<id>) que abre direto nela, e pode receber curtidas.
 
 export type Entry = {
   id: string
@@ -256,12 +256,17 @@ export function createGallery(o: Options) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Não deu pra enviar agora.')
       message.className = 'expo-message ok'
-      message.textContent = 'Recebemos sua abóbora! Ela entra na exposição assim que for aprovada.'
+      message.textContent = 'Pronto, sua abóbora já está na exposição!'
       form.hidden = true
       if (data.id) {
         sentId = data.id
         $('#expo-mylink-url').textContent = shareUrl(sentId).replace(/^https?:\/\//, '')
         myLink.hidden = false
+      }
+      if (data.entry) {
+        entries = [{ ...data.entry, likes: 0 }, ...entries.filter((e) => e.id !== data.entry.id)]
+        status.textContent = ''
+        render()
       }
       try {
         localStorage.setItem('abobora-nome', name)
@@ -316,7 +321,7 @@ export function createGallery(o: Options) {
       } catch {
         history.replaceState(null, '', '/')
         await show(true)
-        status.textContent = 'Essa abóbora ainda não está na exposição (talvez esteja esperando aprovação). Dá uma olhada nas outras!'
+        status.textContent = 'Essa abóbora ainda não está na exposição (talvez tenha sido retirada). Dá uma olhada nas outras!'
       }
     },
   }

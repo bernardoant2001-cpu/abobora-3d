@@ -3,7 +3,7 @@ const SHAPES = { Redonda: 'Redonda', Alta: 'Alta', Achatada: 'Achatada', Cabaca:
 const ACCS = { AccWitch: 'Chapéu de bruxa', AccTopHat: 'Cartola', AccBow: 'Laço', AccHorns: 'Chifres' }
 const $ = (s) => document.querySelector(s)
 let token = ''
-let status = 'pending'
+let status = 'approved'
 try { token = sessionStorage.getItem('abobora-admin') || '' } catch {}
 
 async function api(method, body) {
@@ -56,7 +56,7 @@ function card(e) {
 
 function count() {
   const n = $('#grid').children.length
-  $('#status').textContent = n ? `${n} abóbora${n > 1 ? 's' : ''}` : status === 'pending' ? 'Nada aguardando aprovação.' : 'Nenhuma abóbora na exposição.'
+  $('#status').textContent = n ? `${n} abóbora${n > 1 ? 's' : ''}` : status === 'pending' ? 'Nenhuma abóbora antiga aguardando.' : 'Nenhuma abóbora na exposição.'
 }
 
 let loading = 0

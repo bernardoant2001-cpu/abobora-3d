@@ -3,14 +3,14 @@ import { randomBytes } from 'node:crypto'
 
 // GET  /api/gallery → abóboras aprovadas (mais recentes primeiro), com o número de curtidas
 // GET  /api/gallery?id=… → uma abóbora aprovada (usada pelo link próprio /a/<id>)
-// POST /api/gallery → envia uma abóbora; ela entra na fila e só aparece depois de aprovada em /admin.html
+// POST /api/gallery → envia uma abóbora; ela entra direto na exposição (dá pra tirar em /admin.html)
 
 const SHAPES = ['Redonda', 'Alta', 'Achatada', 'Cabaca']
 const ACCESSORIES = ['AccWitch', 'AccTopHat', 'AccBow', 'AccHorns']
 const MAX_MASK = 700_000
 const MAX_THUMB = 260_000
 const MAX_PAINT = 800_000
-const MAX_PENDING = 150
+const MAX_PER_HOUR = 60
 const MAX_BODY = 2_500_000
 
 export type Entry = {
@@ -82,7 +82,7 @@ export function sameSiteJson(request: Request) {
 
 export const clientIp = (request: Request) => request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'desconhecido'
 
-// limite simples por instância; a fila de aprovação é a proteção de verdade
+// limite simples por instância; o teto por hora no POST segura enxurrada vinda de vários lugares
 const recent = new Map<string, number[]>()
 export function rateLimited(key: string, max = 5, windowMs = 10 * 60_000) {
   const now = Date.now()
@@ -172,8 +172,12 @@ export async function POST(request: Request) {
   const paint = body.paint == null ? null : decode(body.paint, 'image/png', [0x89, 0x50, 0x4e, 0x47], MAX_PAINT)
   if (body.paint != null && !paint) return json({ error: 'Envio inválido.' }, 400)
 
-  const { blobs: pending } = await list({ prefix: 'pending/', limit: MAX_PENDING + 1 })
-  if (pending.length > MAX_PENDING) return json({ error: 'A fila da exposição está cheia. Tenta de novo mais tarde.' }, 503)
+  // sem aprovação manual: se chegar abóbora demais de uma vez, segura até a próxima hora
+  // ponytail: olha só as 1000 primeiras da lista; passando disso, guardar a contagem por hora num blob próprio
+  const { blobs: recent } = await list({ prefix: 'approved/', limit: 1000 })
+  const hourAgo = Date.now() - 3600_000
+  if (recent.filter((b) => +new Date(b.uploadedAt) > hourAgo).length >= MAX_PER_HOUR)
+    return json({ error: 'A exposição recebeu muitas abóboras agora. Tenta de novo daqui a pouco.' }, 503)
 
   const id = randomBytes(10).toString('hex')
   const opts = { access: 'public' as const, addRandomSuffix: false }
@@ -184,12 +188,12 @@ export async function POST(request: Request) {
   ])
   const entry: Entry = { id, name, shape, accessory, createdAt: new Date().toISOString(), mask: maskBlob.url, thumb: thumbBlob.url }
   if (paintBlob) entry.paint = paintBlob.url
-  await put(`pending/${id}.json`, JSON.stringify(entry), { ...opts, contentType: 'application/json', cacheControlMaxAge: 60 })
+  await put(`approved/${id}.json`, JSON.stringify(entry), { ...opts, contentType: 'application/json', cacheControlMaxAge: 60 })
   await notify(entry, new URL(request.url).origin)
-  return json({ ok: true, id }, 201)
+  return json({ ok: true, id, entry }, 201)
 }
 
-/** avisa no celular (app ntfy, tópico secreto em NTFY_TOPIC) que tem abóbora esperando aprovação; nunca derruba o envio */
+/** avisa no celular (app ntfy, tópico secreto em NTFY_TOPIC) que entrou abóbora nova na exposição; nunca derruba o envio */
 async function notify(entry: Entry, origin: string) {
   const topic = process.env.NTFY_TOPIC
   if (!topic) return
@@ -198,8 +202,8 @@ async function notify(entry: Entry, origin: string) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       topic,
-      title: 'Abóbora nova para aprovar 🎃',
-      message: `${entry.name} mandou uma abóbora para a exposição.`,
+      title: 'Abóbora nova na exposição 🎃',
+      message: `${entry.name} colocou uma abóbora na exposição. Toque para revisar.`,
       click: `${origin}/admin.html`,
       attach: entry.thumb,
       filename: 'abobora.jpg',
